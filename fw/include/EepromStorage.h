@@ -73,7 +73,7 @@ private:
     void LoggerInit(); // Skenira EEPROM da pronadje head/tail
 
     // Privatne funkcije za I2C komunikaciju sa 24C1024 (16-bitne adrese)
-    bool WriteBytes(uint16_t address, uint8_t* data, uint16_t length);
+    bool WriteBytes(uint16_t address, const uint8_t* data, uint16_t length);
     bool ReadBytes(uint16_t address, uint8_t* data, uint16_t length);
 
     uint16_t m_log_write_index; // 'head'

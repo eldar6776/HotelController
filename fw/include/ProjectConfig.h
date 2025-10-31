@@ -3,118 +3,101 @@
  * @file    ProjectConfig.h
  * @author  Gemini & [Vase Ime]
  * @brief   Centralna konfiguracija za Hotel Controller ESP32
- *
- * @note
- * Ovdje definiramo nasu zakljucanu hardversku mapu pinova (v11)
- * i fiksnu memorijsku mapu za EEPROM i SPI Flash,
- * kao i sve globalne konstante projekta.
  ******************************************************************************
  */
 
-#pragma once // Osigurava da se fajl ukljuci samo jednom
+#pragma once
 
 //=============================================================================
-// 1. HARDVERSKA MAPA PINOVA (v11 - DWIN + 1x Flash + LED)
+// 1. HARDVERSKA MAPA PINOVA (v11 - WT32-ETH01)
 //=============================================================================
-// ----------------------------------------------------------------------------
-// ZAUZETI SISTEMSKI PINOVI (NE KORISTITI!)
-// ----------------------------------------------------------------------------
-#define PIN_EMAC_CLK        0   // IO0 (Kriticki sat sa LAN8720A)
 
-// ----------------------------------------------------------------------------
-// RS485 INTERFEJS (Serial2)
-// ----------------------------------------------------------------------------
-#define RS485_RX_PIN        5   // IO5 (RXD) -> Serial2 RX
-#define RS485_TX_PIN        17  // IO17 (TXD) -> Serial2 TX
-#define RS485_DE_PIN        33  // IO33 (485_EN) -> Driver Enable
+// --- RS485 INTERFEJS (Serial2) ---
+#define RS485_RX_PIN        5
+#define RS485_TX_PIN        17
+#define RS485_DE_PIN        33
 
-// ----------------------------------------------------------------------------
-// I2C INTERFEJS (EEPROM 24C1024)
-// ----------------------------------------------------------------------------
-#define I2C_SDA_PIN         14  // IO14
-#define I2C_SCL_PIN         15  // IO15
+// --- I2C INTERFEJS (EEPROM) ---
+#define I2C_SDA_PIN         21
+#define I2C_SCL_PIN         22
+#define EEPROM_I2C_ADDR     0x50
 
-// ----------------------------------------------------------------------------
-// DWIN DISPLEJ / FAZA 1 DEBUG PORT (Serial0)
-// ----------------------------------------------------------------------------
-#define DWIN_TX_PIN         1   // IO1 (TX0) -> Serial0 TX
-#define DWIN_RX_PIN         3   // IO3 (RX0) -> Serial0 RX
+// --- SPI INTERFEJS (Eksterni Flash - Pinovi koji su nedostajali u main.cpp) ---
+#define SPI_SCK_PIN         14
+#define SPI_MISO_PIN        19
+#define SPI_MOSI_PIN        18
+#define SPI_FLASH_CS_PIN    23
 
-// ----------------------------------------------------------------------------
-// SPI INTERFEJS (ZA W25Q512 - 64MB Flash)
-// ----------------------------------------------------------------------------
-#define SPI_SCK_PIN         12  // IO12 (SCK)
-#define SPI_MOSI_PIN        4   // IO4  (MOSI)
-#define SPI_MISO_PIN        36  // IO36 (MISO) (Input-Only)
-#define SPI_FLASH_CS_PIN    32  // IO32 (CFG) (Chip Select)
+// --- Ethernet (ETH) ---
+#define ETH_MDC_PIN         23  // Konflikt sa Flash CS (Upravlja se softverski)
+#define ETH_MDIO_PIN        12
+#define ETH_POWER_PIN       16
+#define ETH_PHY_ADDR        1
+#define ETH_PHY_TYPE        ETH_PHY_LAN8720
+#define ETH_CLK_MODE        ETH_CLOCK_GPIO0_IN
 
-// ----------------------------------------------------------------------------
-// OSTALI GPIO
-// ----------------------------------------------------------------------------
-#define STATUS_LED_PIN      2   // IO2 (On-board LED za dijagnostiku)
-#define WLAN_RST_BTN_PIN    39  // IO39 (Input-Only pin za WiFi reset)
-
-// ----------------------------------------------------------------------------
-// VIRTUELNI PINOVI (Upravljani preko I2C Expandera)
-// ----------------------------------------------------------------------------
-#define VIRTUAL_LIGHT_PIN   254 // Relej za rasvjetu
-#define VIRTUAL_LED_PIN_A   253 // Neka druga LED dioda
-// ...
+// --- OSTALO ---
+#define STATUS_LED_PIN      2
+#define WIFI_RST_BTN_PIN    32
+#define SERIAL_DEBUG_BAUDRATE 115200 // Rjesava gresku u main.cpp
 
 //=============================================================================
-// 2. MEMORIJSKA MAPA (EEPROM 24C1024 - 128KB)
+// 2. GLOBALNE KONSTANTE SISTEMA (Rjesavanje svih 'was not declared' errora)
 //=============================================================================
-#define EEPROM_SIZE_BYTES       (128 * 1024)
-#define EEPROM_I2C_ADDR         0x50 // Standardna adresa za 24C1024
 
-// BLOK 1: Konfiguracija Sistema (Rezervisemo 1KB)
-#define EEPROM_CONFIG_START_ADDR    0x0000 // Pocetak EEPROM-a
-#define EEPROM_CONFIG_SIZE          1024
+// --- RS485 Protokol ---
+#define RS485_BAUDRATE              115200
+#define MAX_PACKET_LENGTH           256    
+#define RS485_BUFFER_SIZE           MAX_PACKET_LENGTH   // Rjesava gresku u Rs485Service.h
+#define RS485_TIMEOUT_MS            300
+#define RS485_RESP_TOUT_MS          RS485_TIMEOUT_MS    // Rjesava gresku u Rs485Service.cpp
 
-// BLOK 2: Lista Adresa (Rezervisemo 2KB za max 1000 adresa)
-#define EEPROM_ADDR_LIST_START_ADDR 0x0400 // (Nakon 1KB konfiguracije)
-#define EEPROM_ADDR_LIST_SIZE       2048
+// --- Polling i Logovanje ---
+#define MAX_ADDRESS_LIST_SIZE       64                  // Rjesava gresku u LogPullManager.h
+#define LOG_ENTRY_SIZE              20                  // Fiksna velicina za LogEntry (rjesava buffer overflow warning)
+#define MAX_LOG_ENTRIES             512
+#define STATUS_BYTE_VALID           0x55                // Rjesava gresku u EepromStorage.cpp
+#define STATUS_BYTE_EMPTY           0xFF                // Rjesava gresku u EepromStorage.cpp
 
-// BLOK 3: Log Događaja (Ostatak memorije, cca 125KB)
-#define EEPROM_LOG_START_ADDR       0x0C00 // (Nakon 1KB + 2KB)
-#define EEPROM_LOG_END_ADDR         (EEPROM_SIZE_BYTES - 1) // Do kraja
-#define LOG_ENTRY_SIZE              16 // Definisacemo tacnu velicinu strukture loga
-#define MAX_LOG_ENTRIES             ((EEPROM_LOG_END_ADDR - EEPROM_LOG_START_ADDR) / LOG_ENTRY_SIZE)
-#define STATUS_BYTE_VALID           0x55 // Marker za validan log
-#define STATUS_BYTE_EMPTY           0xFF // Marker za prazan slot
+// Jedan zapis u EEPROM log oblasti = status byte + LOG_ENTRY_SIZE
+#define LOG_RECORD_SIZE              (LOG_ENTRY_SIZE + 1)
+
+// --- TimeSync / NTP ---
+#define TIME_BROADCAST_INTERVAL_MS  3600000             // Rjesava gresku u TimeSync.cpp
+#define TIMEZONE_STRING             "CET-1CEST,M3.5.0/2,M10.5.0/3"
+#define NTP_SERVER_1                "hr.pool.ntp.org"
+#define NTP_SERVER_2                "ba.pool.ntp.org"
+
+// --- Update Manager ---
+#define MAX_UPDATE_RETRIES          3                   // Rjesava gresku u UpdateManager.cpp
+#define UPDATE_PACKET_TIMEOUT_MS    5000                // Rjesava gresku u UpdateManager.cpp
+#define UPDATE_DATA_CHUNK_SIZE      128
+
+// --- Ping Watchdog ---
+#define PING_INTERVAL_MS            60000
 
 //=============================================================================
-// 3. MEMORIJSKA MAPA (SPI FLASH W25Q512 - 64MB)
-// (Bazirano na common.h fajlu [cite: 418-453])
+// 3. MEMORIJSKA MAPA EEPROM-a
 //=============================================================================
-// Definisemo "slotove" sa fiksnim adresama
-// Koristimo velike blokove (Sektori na SPI flashu su cesto 64KB)
-#define SLOT_SIZE_64K           (64 * 1024)
+
+#define EEPROM_CONFIG_START_ADDR        0x0000
+#define EEPROM_ADDRESS_LIST_START_ADDR  0x0100
+#define EEPROM_ADDRESS_LIST_SIZE        (MAX_ADDRESS_LIST_SIZE * sizeof(uint16_t))
+#define EEPROM_LOG_START_ADDR           0x0200      // Rjesava gresku u EepromStorage.cpp
+#define EEPROM_LOG_AREA_SIZE            (MAX_LOG_ENTRIES * LOG_RECORD_SIZE)
+
+//=============================================================================
+// 4. MEMORIJSKA MAPA SPI FLASH-a (16MB)
+//=============================================================================
+
 #define SLOT_SIZE_128K          (128 * 1024)
 #define SLOT_SIZE_1M            (1024 * 1024)
 #define SLOT_SIZE_12M           (12 * 1024 * 1024)
 
-#define SLOT_ADDR_FW_RC         0x00000000 // Slot za FW Kontrolera Sobe (Rezervisemo 128K)
-#define SLOT_ADDR_BL_RC         0x00020000 // Slot za BL Kontrolera Sobe (Rezervisemo 64K)
-#define SLOT_ADDR_FW_TH_1M      0x00030000 // Slot za FW Termostata (Rezervisemo 1MB)
-#define SLOT_ADDR_BL_TH         0x00130000 // Slot za BL Termostata (Rezervisemo 64K)
-#define SLOT_ADDR_IMG_LOGO      0x00140000 // Slot za Logo (Rezervisemo 128K)
-#define SLOT_ADDR_IMG_RC_START  0x00160000 // Pocetak bloka za 14 slika (svaka po 256K)
-// ... (14 * 256K = 3.5MB) ...
+#define SLOT_ADDR_FW_RC         0x00000000 // Slot za FW Kontrolera Sobe (128K)
+#define SLOT_ADDR_BL_RC         0x00020000 // Slot za BL Kontrolera Sobe (64K)
+#define SLOT_ADDR_FW_TH_1M      0x00030000 // Slot za FW Termostata (1MB)
+#define SLOT_ADDR_BL_TH         0x00130000 // Slot za BL Termostata (64K)
+#define SLOT_ADDR_IMG_LOGO      0x00140000 // Slot za Logo (128K)
+#define SLOT_ADDR_IMG_RC_START  0x00160000 // Pocetak bloka za 14 slika (3.5MB)
 #define SLOT_ADDR_QSPI_ER_12M   0x00500000 // Veliki slot od 12MB za ER_QSPI1 fajl
-
-//=============================================================================
-// 4. OSTALE KONSTANTE PROJEKTA
-//=============================================================================
-#define SERIAL_DEBUG_BAUDRATE   115200 // Za Fazu 1
-#define RS485_BAUDRATE          115200 // Prema Procitaj.txt [cite: 292-323]
-#define RS485_RESP_TOUT_MS      45     // Definisano u common.h [cite: 418-453]
-#define RS485_RX2TX_DELAY_MS    3      // Definisano u common.h [cite: 418-453]
-
-// Nomenklatura (podsjetnik)
-// Fajlovi/Klase:   PascalCase
-// Funkcije/Metode: PascalCase
-// Globalne Var:    g_snake_case
-// Clanske Var:     m_snake_case
-// Lokalne Var:     camelCase
-// Konstante:       ALL_CAPS_SNAKE_CASE

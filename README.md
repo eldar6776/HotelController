@@ -96,4 +96,32 @@ Umjesto `uSD` kartice i `FAT` fajl sistema, ovaj projekat koristi kombinaciju dv
 1.  **I2C EEPROM (24C1024 - 128KB):**
     * **Blok 1 (Konfiguracija):** IP adrese, RS485 adrese, System ID...
     * **Blok 2 (Lista Adresa):** Lista od ~400 adresa za `LogPullManager`.
-    * **Blok 3 (
+    * **Blok 3 (Logovi):** Cirkularni bafer (`head/tail`) za sve dolazne logove sa magistrale.
+2.  **SPI Flash (W25Q512 - 64MB):**
+    * Koristi se isključivo za skladištenje velikih binarnih fajlova (FW, BL, Slike, QSPI) koji se šalju na RS485 bus.
+    * Svaki fajl ima definisan fiksni "slot" (adresu) unutar `ProjectConfig.h`.
+
+## 5. Razvojni Proces (Faze)
+
+1.  **FAZA 1 (Razvoj Jezgra):**
+    * Uređaj je spojen USB kablom. `Serial0` (`GPIO1/3`) se koristi za `Serial.println()` u VS Code. DWIN Displej je **isključen**.
+    * Razvijaju se i testiraju svi moduli (`EepromStorage`, `Rs485Service`, `HttpServer`...).
+2.  **FAZA 2 (Integracija Grafike):**
+    * Kada je Faza 1 stabilna, USB kabl se isključuje.
+    * DWIN Displej se fizički spaja na `TX0`/`RX0` pinove.
+    * `Serial.println()` poruke sada automatski idu na DWIN.
+    * Dodaje se kod za `Serial.read()` za primanje komandi *sa* DWIN-a.
+
+## 6. Nomenklatura Koda
+
+Projekat koristi striktnu nomenklaturu za svu kodu:
+
+| Kategorija | Stil (Format) | Primjer |
+| :--- | :--- | :--- |
+| **Fajlovi (Moduli)** | `PascalCase` | `Rs485Service.h` |
+| **Tipovi (Klase, Strukture)** | `PascalCase` | `class EepromStorage` |
+| **Funkcije / Metode** | `PascalCase` | `void Initialize()` |
+| **Globalne Varijable** | `g_snake_case` | `g_rs485_task_handle` |
+| **Članske Varijable (Klase)**| `m_snake_case` | `uint16_t m_write_index;` |
+| **Lokalne Varijable** | `camelCase` | `int localCounter` |
+| **Konstante / Makroi** | `ALL_CAPS_SNAKE_CASE` | `RS485_DE_PIN` |

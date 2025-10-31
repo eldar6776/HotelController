@@ -14,6 +14,8 @@
 #define TIME_SYNC_H
 
 #include "Rs485Service.h" // Za IRs485Manager
+#include "ProjectConfig.h"
+#include "EepromStorage.h" // Za g_appConfig
 
 class TimeSync : public IRs485Manager
 {

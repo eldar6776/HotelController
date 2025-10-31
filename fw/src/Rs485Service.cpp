@@ -7,6 +7,16 @@
  */
 
 #include "Rs485Service.h"
+#include "ProjectConfig.h" 
+#include "EepromStorage.h" // Za g_appConfig
+
+// Globalna konfiguracija (treba biti ucitana u EepromStorage::Initialize)
+extern AppConfig g_appConfig; 
+
+// RS485 Kontrolni Karakteri
+#define SOH 0x01
+#define STX 0x02
+#define EOT 0x04
 
 Rs485Service::Rs485Service() :
     m_rs485_serial(2) // Koristi UART2 (Serial2)
@@ -59,9 +69,6 @@ void Rs485Service::TaskWrapper(void* pvParameters)
     static_cast<Rs485Service*>(pvParameters)->Run();
 }
 
-/**
- * @brief Glavna petlja FreeRTOS zadatka.
- */
 void Rs485Service::Run()
 {
     while (true)
@@ -69,27 +76,23 @@ void Rs485Service::Run()
         switch (m_state)
         {
         case Rs485State::IDLE:
-            // Ovo je Dispecer. Provjerava prioritete.
             Dispatch();
             break;
         
         case Rs485State::SENDING:
-            // Salje paket koji je postavio m_current_bus_owner
-            // TODO: Implementirati slanje
+            // Slanje se završava unutar SendPacket() prelazom na WAITING. 
+            // Ova tranzicija se ne bi trebala desiti.
+            m_state = Rs485State::IDLE; 
             break;
             
         case Rs485State::WAITING:
-            // Ceka na odgovor ili timeout
+        case Rs485State::RECEIVING:
             HandleReceive();
-            if ((millis() - m_timeout_start) > RS485_RESP_TOUT_MS)
+            // Provjera timeout-a (aktivna samo u stanju WAITING)
+            if (m_state == Rs485State::WAITING && (millis() - m_timeout_start) > RS485_RESP_TOUT_MS)
             {
                 m_state = Rs485State::TIMEOUT;
             }
-            break;
-            
-        case Rs485State::RECEIVING:
-            // Nastavlja da prima dok se paket ne kompletira
-            HandleReceive();
             break;
 
         case Rs485State::TIMEOUT:
@@ -103,88 +106,147 @@ void Rs485Service::Run()
             break;
         }
 
-        vTaskDelay(1 / portTICK_PERIOD_MS); // Mali delay
+        vTaskDelay(1 / portTICK_PERIOD_MS); 
     }
 }
 
 /**
- * @brief DISPECER: Provjerava prioritete i dodjeljuje magistralu.
+ * @brief DISPECER: Provjerava prioritete (HTTP -> Update -> LogPull -> TimeSync).
  */
 void Rs485Service::Dispatch()
 {
-    // TODO: Implementirati logiku provjere prioriteta
-    // (Ovdje cemo samo pozvati LogPullManager radi jednostavnosti)
-    
-    // 1. Provjeri HTTP Upit
-    // if (m_http_query_manager->IsPending()) ...
+    IRs485Manager* managers[] = {
+        m_http_query_manager,
+        m_update_manager,
+        m_log_pull_manager,
+        m_time_sync
+    };
 
-    // 2. Provjeri Update
-    // if (m_update_manager->IsPending()) ...
-
-    // 3. Pokreni redovni Polling
-    // (Za sada, samo pozivamo njega)
-    if (m_log_pull_manager != NULL)
+    for (IRs485Manager* manager : managers)
     {
-        m_current_bus_owner = m_log_pull_manager;
-        m_log_pull_manager->Service(); // Ovo ce pozvati SendPacket()
+        if (manager != NULL)
+        {
+            m_current_bus_owner = manager;
+            
+            // Pozivamo Service(). Ako pošalje paket, prelazimo u WAITING i prekidamo Dispatch.
+            manager->Service();
+
+            if (m_state != Rs485State::IDLE)
+            {
+                return;
+            }
+            m_current_bus_owner = NULL; 
+        }
     }
+    
+    m_current_bus_owner = NULL; 
+    m_state = Rs485State::IDLE;
+}
+
+/**
+ * @brief Izračunava Checksum na Data Polju paketa (počinje od indeksa 6).
+ */
+uint16_t Rs485Service::CalculateChecksum(uint8_t* buffer, uint16_t data_length)
+{
+    uint16_t checksum = 0;
+    for (uint16_t i = 6; i < (6 + data_length); i++) 
+    {
+        checksum += buffer[i]; 
+    }
+    return checksum;
+}
+
+/**
+ * @brief Validira SOH/STX, Adrese, Dužinu i Checksum paketa. (Replicira logiku iz hotel_ctrl.c)
+ */
+bool Rs485Service::ValidatePacket(uint8_t* buffer, uint16_t length)
+{
+    // Minimalna dužina paketa je 10 bajtova
+    if (length < 10) return false;
+
+    uint16_t data_length = buffer[5];
+    uint16_t expectedLength = data_length + 9; 
+
+    if (length != expectedLength) return false;
+    
+    // 1. Provjera SOH/STX i EOT
+    if ((buffer[0] != SOH) && (buffer[0] != STX)) return false; 
+    if (buffer[length - 1] != EOT) return false; 
+
+    // 2. Provjera Adrese Cilja (Target Address) - mora biti naša adresa (rsifa)
+    uint16_t target_addr = (buffer[1] << 8) | buffer[2];
+    uint16_t my_addr = g_appConfig.rs485_iface_addr;
+    
+    if (target_addr != my_addr) return false; 
+
+    // 3. Provjera Checksum-a
+    uint16_t received_checksum = (buffer[expectedLength - 3] << 8) | buffer[expectedLength - 2];
+    uint16_t calculated_checksum = CalculateChecksum(buffer, data_length);
+    
+    if (received_checksum != calculated_checksum)
+    {
+        Serial.printf("[Rs485Service] GRESKA: Checksum neispravan. Primljen: 0x%X, Očekivan: 0x%X\r\n", 
+            received_checksum, calculated_checksum);
+        return false;
+    }
+    
+    return true;
 }
 
 void Rs485Service::HandleReceive()
 {
+    // Nastavi primanje bajtova
     while (m_rs485_serial.available())
     {
         if (m_rx_count < RS485_BUFFER_SIZE)
         {
             m_rx_buffer[m_rx_count++] = m_rs485_serial.read();
-            // TODO: Ovdje ide logika za detekciju kraja paketa (EOT)
-            // i provjeru SOH/Adrese/CRC
-            
-            // Ako je paket kompletan i validan:
-            if (ValidatePacket(m_rx_buffer, m_rx_count))
-            {
-                if (m_current_bus_owner != NULL)
-                {
-                    m_current_bus_owner->ProcessResponse(m_rx_buffer, m_rx_count);
-                }
-                m_current_bus_owner = NULL; // Oslobodi magistralu
-                m_state = Rs485State::IDLE;
-                m_rx_count = 0;
-            }
+            m_state = Rs485State::RECEIVING;
         }
         else
         {
-            // Prekoracenje bafera
             m_rx_count = 0; 
+            m_state = Rs485State::IDLE;
+            return;
+        }
+    }
+
+    // Provjera kraja paketa (aktivna samo u stanju RECEIVING)
+    if (m_state == Rs485State::RECEIVING)
+    {
+        if (ValidatePacket(m_rx_buffer, m_rx_count))
+        {
+            if (m_current_bus_owner != NULL)
+            {
+                m_current_bus_owner->ProcessResponse(m_rx_buffer, m_rx_count);
+            }
+            
+            m_current_bus_owner = NULL; 
+            m_state = Rs485State::IDLE;
+            m_rx_count = 0;
         }
     }
 }
 
-bool Rs485Service::ValidatePacket(uint8_t* buffer, uint16_t length)
-{
-    // TODO: Implementirati SOH, EOT, CRC i provjeru adrese
-    return false; // Privremeno
-}
-
-
 bool Rs485Service::SendPacket(uint8_t* data, uint16_t length)
 {
-    if (m_state != Rs485State::IDLE)
+    // Provjera da li je SendPacket pozvan od strane trenutnog vlasnika magistrale i da li je IDLE
+    if (m_current_bus_owner == NULL && m_state == Rs485State::IDLE)
     {
-        // Magistrala je zauzeta, odbij slanje
+        Serial.println(F("[Rs485Service] GRESKA: Pokušaj slanja bez vlasnika/zauzeta magistrala."));
         return false;
     }
     
     m_state = Rs485State::SENDING;
     
-    digitalWrite(RS485_DE_PIN, HIGH); // Ukljuci slanje
-    delayMicroseconds(50); // Kratka pauza
+    digitalWrite(RS485_DE_PIN, HIGH); 
+    delayMicroseconds(50); 
 
     m_rs485_serial.write(data, length);
-    m_rs485_serial.flush(); // Sacekaj da se svi bajtovi posalju
+    m_rs485_serial.flush(); 
 
     delayMicroseconds(50);
-    digitalWrite(RS485_DE_PIN, LOW); // Vrati na prijem
+    digitalWrite(RS485_DE_PIN, LOW); 
     
     m_timeout_start = millis();
     m_state = Rs485State::WAITING;
@@ -193,6 +255,21 @@ bool Rs485Service::SendPacket(uint8_t* data, uint16_t length)
     return true;
 }
 
-// ... Implementacija RequestBusAccess i ReleaseBusAccess ...
-bool Rs485Service::RequestBusAccess(IRs485Manager* manager) { return false; }
-void Rs485Service::ReleaseBusAccess(IRs485Manager* manager) {}
+bool Rs485Service::RequestBusAccess(IRs485Manager* manager)
+{
+    if (m_state == Rs485State::IDLE)
+    {
+        m_current_bus_owner = manager;
+        return true;
+    }
+    return false;
+}
+
+void Rs485Service::ReleaseBusAccess(IRs485Manager* manager)
+{
+    if (m_current_bus_owner == manager)
+    {
+        m_current_bus_owner = NULL;
+        m_state = Rs485State::IDLE;
+    }
+}

@@ -13,6 +13,16 @@
 #ifndef HTTP_SERVER_H
 #define HTTP_SERVER_H
 
+
+// --- RJEŠAVANJE KONFLIKTA MAKROA (za SdFat/FS redefinicije) ---
+#ifdef FILE_READ
+#undef FILE_READ
+#endif
+#ifdef FILE_WRITE
+#undef FILE_WRITE
+#endif
+// ------------------------------------------------------------
+
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include "ProjectConfig.h"

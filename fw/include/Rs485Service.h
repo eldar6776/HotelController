@@ -11,7 +11,8 @@
 
 #include <Arduino.h>
 #include <freertos/task.h> 
-#include "ProjectConfig.h" // Ukljucuje RS485_BUFFER_SIZE
+#include "ProjectConfig.h" 
+#include "EepromStorage.h" // Za pristup AppConfig (rsifa)
 
 // Apstraktni interfejs (ugovor) koji svaki Menadzer mora postovati
 class IRs485Manager
@@ -44,6 +45,7 @@ public:
     );
     void StartTask();
 
+    // Javne metode koje koriste Menadžeri:
     bool RequestBusAccess(IRs485Manager* manager);
     bool SendPacket(uint8_t* data, uint16_t length);
     void ReleaseBusAccess(IRs485Manager* manager);
@@ -53,8 +55,10 @@ private:
     void Run(); 
     void Dispatch();
     void HandleReceive();
+    
+    // Potpuno implementirane funkcije:
     bool ValidatePacket(uint8_t* buffer, uint16_t length);
-    uint16_t CalculateChecksum(uint8_t* buffer, uint16_t length); // Dodano za kompletnost
+    uint16_t CalculateChecksum(uint8_t* buffer, uint16_t data_length); 
 
     TaskHandle_t m_task_handle;
     HardwareSerial m_rs485_serial;

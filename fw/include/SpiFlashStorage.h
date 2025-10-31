@@ -13,6 +13,16 @@
 #ifndef SPI_FLASH_STORAGE_H
 #define SPI_FLASH_STORAGE_H
 
+// --- RJEŠAVANJE KONFLIKTA MAKROA (za SdFat/FS redefinicije) ---
+// Ove makroe redefiniše SdFat, pa ih moramo "očistiti" ako su već definisani 
+// od strane ESP32 FS/ESPAsyncWebServer.
+#ifdef FILE_READ
+#undef FILE_READ
+#endif
+#ifdef FILE_WRITE
+#undef FILE_WRITE
+#endif
+
 #include <Arduino.h>
 #include <SPI.h>
 #include <Adafruit_SPIFlash.h>

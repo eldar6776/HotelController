@@ -7,7 +7,7 @@
  */
 
 #include <Arduino.h>
-
+#include <FS.h>
 // Ukljucivanje svih Headera (za globalne objekte)
 #include "ProjectConfig.h"   
 #include "NetworkManager.h"    
@@ -20,6 +20,7 @@
 #include "LogPullManager.h"
 #include "TimeSync.h"
 #include "UpdateManager.h"
+
 
 // Deklaracija globalnih objekata
 NetworkManager g_networkManager;

@@ -1,0 +1,404 @@
+termostat firmware od RT200916:
+============================================================
+iskljuci termostat:								http://hotel_ctrl/sysctrl.cgi?tha=101&sta=OFF&owa=1
+ukljuci termostat na 22 stepena:				http://hotel_ctrl/sysctrl.cgi?tha=101&sta=ON&spt=22&owa=1
+ukljuci termostat na 26 stepeni grijanje:		http://hotel_ctrl/sysctrl.cgi?tha=101&sta=ON&spt=26&mod=HEAT&owa=1
+ukljuci termostat na 20 stepeni hladjenje:		http://hotel_ctrl/sysctrl.cgi?tha=101&sta=ON&spt=20&mod=COOL&owa=1
+podesi termostat na 25 stepeni:					http://hotel_ctrl/sysctrl.cgi?tha=101&spt=25&owa=1
+podesi termostat na grijanje 26 stepeni:		http://hotel_ctrl/sysctrl.cgi?tha=101&spt=26&mod=HEAT&owa=1
+podesi termostat na hladjenje 22 stepena:		http://hotel_ctrl/sysctrl.cgi?tha=101&spt=22&mod=COOL&owa=1
+
+
+
+
+LISTA DEFAULT ADRESA ONEWIRE BUS-A:
+============================================================
+broadcast adresa za sve onewire ureðaje 	127		hex 7F
+grupna adresa za kontrolere hotela 			80		hex 50
+prva interface adresa kontrolera hotela		71		hex 47
+grupna adresa za odlagace kartica			30 		hex 1E
+interface adresa prvog odlagaca kartica		21 		hex 15
+grupna adresa za kontrolere sobe			20 		hex 14
+interface adresa prvog kontrolera sobe		11 		hex B
+grupna adresa za termostate sobe			10		hex A
+interface adresa prvog termostata sobe		1
+max. broj interface-a na onewire busu		9
+odabrani baudrate busa						9600 bps
+
+
+LISTA DEFAULT ADRESA RS485 BUSA:
+============================================================
+broadcast adresa za sve rs485 ureðaje		39321 	hex 9999
+grupna adresa za kontrolere hotela			35224	hex 8998
+grupna adresa za termostate sobe			30855	hex 7887
+grupna adresa za kontrolere sobe			26486 	hex 6776
+interface adresa novog ureðaja 				65535  	hex FFFF
+interface adresa prvog ureðaja/sobe			10
+interface adresa prvog kontrolera hotela	5
+interface adresa prvog ekspandera 			1
+max. podesiv baudrate busa					921600
+											460800 
+											230400	
+odabrani baudrate busa						115200 bps
+											57600
+											38400
+											19200
+											9600
+											4800 
+min. podesiv baudrate busa					2400   
+
+
+
+KONTROLER HOTELA - LISTA HTTP KOMANDI:
+=================================================================================================================
+*****************************************************************************************************************
+***																											  ***
+*** 		U HTTP	komandi mozes umjesto adresa koristiti	makroe koji imenuju adrese !!!					  ***
+*** Kontroler hotela ce makro zamjeniti aktuelnom adresom sto iskljucuje potrebu za listom aktuelnih adresa.  ***
+***	Makro se odnosi na poslednji definisani interfejs komunikacije, t.j. ako se umetne bilo gdje u komandi    ***
+***	nakon sto je adresiran uredjaj na RS485 busu, makro se odnositi na RS485 adrese ili ako se koristi   	  ***
+***	nakon komande za adresiranje ONEWIRE busa <owa=...>, odnosi se na onewire adrese. Ovaj sablon ce se		  ***
+***	siriti dalje na komunikacijske interfejse kako budu dodavani, a RADIO, WIFI ili X10 su neki od narednih   ***																											  ***
+*****************************************************************************************************************
+***																											  ***
+*** RSbra		explicitno broadcast adresa RS485 interfejsa, npr. rst=RSbra ce resetovati sve rs485 uredjaje ***
+*** OWbra		explicitno broadcast adrese ONEWIRE interfejsa, npr. rst=101&owa=OWbra ce resetovati sve      ***
+***				uredjaje na zajednickom onewire busu <soba> sa uredjajem cija je rs485 interfejs adresa 101   ***
+*** HCgra		koristi umjesto grupne adrese kontrolera hotela												  ***
+*** HCifa		interfejs adresa kontrolera hotela. sid=HCifa&nid=12345	ce promjeniti ID sistema na 12345	  ***
+*** RTgra		grupna adresa termostata sobe. tuf=101&owa=RTgra ce odjednom upisati firmver fajl u sve       ***
+***				termostate na zajednickom onewire busu <soba> sa uredjajem cija je rs485 interfejs adresa 101 ***
+*** RCgra		grupna adresa kontrolera sobe. iuf=RCgra&iul=RCgra&ifa=5&ila=14 ce svim kontrolerima sobe	  ***
+*** 			konektovanim na rs485 bus <nebitno da li su u listi adresa> zamjeniti slike displeja 5~14 sa  ***
+*** 			slikama IMG5.RAW~IMG14.RAW sa uSD kartice <slike su bez foldera na uSD kartici>	  			  *** 
+***	RLgra		grupna adresa kontrolera rasvjete sobe														  ***
+*** CSgra		grupna adresa odlagaca <sa upisom> kartica													  ***
+*** CRgra		grupna adresa citaca <sa upisom> kartica													  ***
+*** PSgra		grupna adresa AC/DC konvertera za napajanje sistema											  ***
+*** PMgra		grupna adresa elektro-mjernog uredjaja za kontrolu potrosnje,napona,struje 					  ***
+***																											  ***
+*****************************************************************************************************************
+
+
+
+request device state:			cst	<addr>									http://hotel_ctrl/sysctrl.cgi?cst=101
+restart device:(0/5=HC)			rst	<addr> owa <addr>						http://hotel_ctrl/sysctrl.cgi?rst=101
+resetRC SOS alarm:				rud	<addr>									http://hotel_ctrl/sysctrl.cgi?rud=101
+onboard led control:			led, <0/1/2/3>								http://hotel_ctrl/sysctrl.cgi?led=2
+set rtc date & time:			tdu 										http://hotel_ctrl/sysctrl.cgi?tdu=114102019083253 
+update weather forecast:		wfc 										http://hotel_ctrl/sysctrl.cgi?wfc=1,1,2,2,2,3,3,3,4,4,4,5,5,5,6,6,6
+load address list from uSD		cad											http://hotel_ctrl/sysctrl.cgi?cad
+read/delete/format log list:    log <3/4/5>									http://hotel_ctrl/sysctrl.cgi?log=3
+preview RC display image:		ipr	<addr>									http://hotel_ctrl/sysctrl.cgi?ipr=101
+configure digital outputs		cdo <addr> do0...do7 <0..5> ctrl <0,1>		http://hotel_ctrl/sysctrl.cgi?cdo=101&do0=2&do1=2&do2=2&do3=2&do4=2&do5=2&do6=2&do7=2&ctrl=0&owa=1
+configure digital inputs		cdi <addr> di0...di7 <0..5>					http://hotel_ctrl/sysctrl.cgi?cdi=101&di0=0&di1=0&di2=0&di3=0&di4=0&di5=0&di6=0&di7=0&owa=1
+set system ID:					sid <addr> nid <0-65535>					http://hotel_ctrl/sysctrl.cgi?sid=5&nid=43981
+set ip addresse:				ipa	<newaddr> snm <newaddr> gwa <newaddr>	http://hotel_ctrl/sysctrl.cgi?ipa=192.168.0.200&snm=255.255.255.0&gwa=192.168.0.1
+set rs485 addresse:(5=HC)		rsc <addr>  rsa <new addr> 					
+											rga <group addr>	
+											rba <broadcast addr> 
+											rib <0-9 baudrate>				http://hotel_ctrl/sysctrl.cgi?rsc=65535&rsa=101&rga=26486&rba=39321&rib=6
+set room controller state:		stg <addr> val	<0-11>						http://hotel_ctrl/sysctrl.cgi?stg=101&val=1&owa=1
+set room display state:			tda, tdn, tdi, tdt, tbm, tbt, owa			http://hotel_ctrl/sysctrl.cgi?tda=101&tdn=1&tdi=10&tdt=0&tbm=1&tbt=0
+set room display thermostat:	tha, spt, dif, sta, mod, ctr, out, owa		http://hotel_ctrl/sysctrl.cgi?tha=101&spt=22&dif=1&sta=ON&mod=HEAT&ctr=ENA&out=ON&owa=1
+set display brightness:			cbr <addr>	br	<0-1000>					http://hotel_ctrl/sysctrl.cgi?cbr=101&br=500
+set bedding replace. time:		sbr <addr> 	per	<0-99>						http://hotel_ctrl/sysctrl.cgi?sbr=101&per=2
+upload & display msg:			txa <addr>  trc,tx0, ty0, tx1, ty1, 
+											txc, txf, txh, txv, txt, owa	http://hotel_ctrl/sysctrl.cgi?txa=101&trc=1&tx0=10&ty0=10&tx1=400&ty1=200&txc=1&txf=10&txh=3&txv=3&txt=Jebase%20Milosa%20i%20Urosa%20dvojica%20losa&owa=1
+															olour: 0~25 = BLUE,....TRANSPARENT,
+															font size: 0~11 = 8,10,13,13B,16,16B,20,20B,24,24B,32,32B
+upload / display qr code:		qra <addr> qrc <text> qrd <0/1> owa <addr>	http://hotel_ctrl/sysctrl.cgi?qra=101&qrc=http://web.infoimediadownloadMobilePoint.apkido+43707-r+101-gu+65483865jhgfzut7fjhgjd!-n+0&owa=1		http://hotel_ctrl/sysctrl.cgi?qra=101&qrd&owa=1
+update HC firmware: 			fwu	<hc>					(CTRL_NEW.BIN)	http://hotel_ctrl/sysctrl.cgi?fwu=hc
+update RC old version fw: 		cud	<addr> 					(NEW.BIN)		http://hotel_ctrl/sysctrl.cgi?cud=101
+update RC firmware:				fuf <addr> ful <end addr> 	(IMG20.RAW)		http://hotel_ctrl/sysctrl.cgi?fuf=101&ful=101
+update RC bootloader:			buf <addr> bul <end addr> 	(IMG21.RAW)		http://hotel_ctrl/sysctrl.cgi?buf=101&bul=101
+update RC display image:		iuf <first addr> 							http://hotel_ctrl/sysctrl.cgi?iuf=101&iul=101&ifa=1&ila=14
+update RT firmware:				tuf <addr> owa <addr> 	  	(IMG22.RAW)		http://hotel_ctrl/sysctrl.cgi?tuf=101&owa=1
+update RT bootloader			tub <addr> owa <addr> 	  	(IMG23.RAW)		http://hotel_ctrl/sysctrl.cgi?tub=101&owa=1
+// komanda implementirana u kontroler hotela Lux-M(Modular) i Lux-I(Integrated) za hotel Ulm, a i u sledecoj radnoj verziji kontrolera hotela Vucko
+update RT user logo image: 		tlg <addr> owa <addr>	  	(IMG24.RAW)		http://hotel_ctrl/sysctrl.cgi?tlg=101&owa=1
+
+								iul <last addr> 			
+								ifa <first img>  			(xx_1.RAW)...
+								ila <last img> 			....(x_14.RAW)
+make new directory on uSD card  mkd <8LETTERS.3LETTERS> 					http://hotel_ctrl/sysctrl.cgi?mkd=101A	
+delete file/folder from usd		rmd <PATH>									http://hotel_ctrl/sysctrl.cgi?rmd=101A	
+send data to wiegand interface  wgi <id 1...4> wgd <data>					http://hotel_ctrl/sysctrl.cgi?wgi=1&wgd=*999999%21%1111%* 
+set new user password			set <addr> psw <G1..8>,<pin>,<hhmmddmmyy>	http://hotel_ctrl/sysctrl.cgi?set=101&psw=G1,1001,1030251219 
+change user password														http://hotel_ctrl/sysctrl.cgi?set=101&psw=G1,1221,1030251219,G3,3003,1030171219
+delete user password			set <addr> psw <G1X..G8X>					http://hotel_ctrl/sysctrl.cgi?set=101&psw=G1X,G2X,G3X,G4X,G5X,G6X,G8X
+add password users				set <addr> usr <'U','M','S','G'..16>		http://hotel_ctrl/sysctrl.cgi?set=101&usr=U,M,S,G
+set rfid card users				pga <addr> pgu <'U','M','S','G'..16>        http://hotel_ctrl/sysctrl.cgi?pga=101&pgu=U,M,S,G
+
+RC odgovor na cst: 	X za sve nepravilne vrijednosti 
+					<1> 	status sobe 0~11
+					<2> 	predznak temperature sobe +/-
+					<3,4>	cijelobrojna temperatura sobe
+					<5>		temperatura sobe prva decimala
+					<6>		temperaturni regulator ukljucen:E ili iskljucen:D
+					<7> 	radni mod temp. regulatora grijanje:H ili hladenje:C
+					<8,9>	cijelobrojna zadata vrijednost temperature
+					<10,11> cijelobrojna vrijednost diferencijala temperature 00~09
+					<12~19> stanje digitalnih ulaza 0~5 vidi text dole za opis
+					<20~27> stanje digitalnih izlaza 0~5 isto kao i ulazi
+					<28~35> verzija firmwera 
+					<36,37> 0~99 vrijeme zamjene posteljine
+					<38>	broj uredaja na onewire busu i za 1 i vise sledece:
+							<40,41>	trenutna slika na displeju termostata
+							<42,43>	kopija <8,9>
+							<44,45> kopija <3,4>
+							<46>	kopija <6>
+							<47> 	kopija <7>
+							<48>	3
+					ili za 0 uredaja na onewire busu <40~48> X~X
+					
+RT odgovor na cst: 	X za sve nepravilne vrijednosti 
+					<1> 	status sobe X
+					<2> 	predznak temperature sobe +/-
+					<3,4>	cijelobrojna temperatura sobe
+					<5>		temperatura sobe prva decimala
+					<6>		temperaturni regulator ukljucen:E ili iskljucen:D
+					<7> 	radni mod temp. regulatora grijanje:H
+					<8,9>	cijelobrojna zadata vrijednost temperature
+					<10,11> cijelobrojna vrijednost diferencijala temperature 00~09
+					<12>	kontrolni prekidac termostata zatvoren :1 ili otvoren:0
+					<13>	softverski dnd taster aktivan:1 ili neaktivan:0
+					<14>	softverski sos taster aktivan:1 ili neaktivan:0
+					<15>	softverski taster za poziv sobarice aktivan:1 ili neaktivan:0
+					<16> 	softverski taster "open" aktivan:1 ili neaktivan:0
+					<17> 	softverski taster "OK"  aktivan:1 ili neaktivan:0
+					<18>	GRESKA NTC SENZORA	aktivna:1 ili neaktivna:0
+					<19>	stanje softverskih tastera promjenjeno (update stanje onewire uredaja u toku) 
+					<20>	softverski taster "vremenska prognoza" aktivan:1 ili neaktivan:0
+					<21>	datum i vrijeme termostata validni:1 ili nisu nikad podeseni:0
+					<22>	displej nije aktivan na dodir, funkcija ciscenja sobe aktivna:1 ili neaktivna:0 (displej aktivan na dodir)
+					<23>	zadnji pritisnuti softverski taster je "OK":1 ili nije taster "OK":0
+					<24~31>	verzija firmwera
+					<32>	onewire adresa
+					<33,34>	slika displeja
+					<35,36> vrijeme slike displeja
+					<37,38> signal buzera
+					<39,40>	vrijeme ponavljanja buzera
+					
+					
+					
+
+KONTROLER HOTELA - LISTA HTTP KOMANDI LUX:
+=================================================================================================================
+WFset   vremenska prognoza     				http://hotel_ctrl/sysctrl.cgi?WFset=1,1,2,2,2,3,3,3,4,4,4,5,5,5,6,6,6
+HSset	statistika orzavanja 				http://hotel_ctrl/sysctrl.cgi?
+MKdir	kreiraj novi direktorij (uSD)		http://hotel_ctrl/sysctrl.cgi?MKdir=OSAMSLOVA.TRI	(8.3 FORMAT)
+HCled	0,1,2								http://hotel_ctrl/sysctrl.cgi?HCled=2
+HClst										http://hotel_ctrl/sysctrl.cgi?HClst
+DTset			(PON. 14.10.2019 08:32:53)  http://hotel_ctrl/sysctrl.cgi?DTset=114102019083253  	
+IPset, SMset, GWset							http://hotel_ctrl/sysctrl.cgi?
+RQlog										http://hotel_ctrl/sysctrl.cgi?RQlog=RDlog	http://hotel_ctrl/sysctrl.cgi?RQlog=DLlog	http://hotel_ctrl/sysctrl.cgi?RQlog=DLlst
+HCfwu										http://hotel_ctrl/sysctrl.cgi?HCfwu
+IDset, IDsys								http://hotel_ctrl/sysctrl.cgi?
+RCset, RMsta/RMbed							http://hotel_ctrl/sysctrl.cgi?RCset=101&RMsta=4
+RCreq										http://hotel_ctrl/sysctrl.cgi?RCreq=101
+DOset										http://hotel_ctrl/sysctrl.cgi?DOset=101&do0=2&do1=2&do2=2&do3=2&do4=2&do5=2&do6=2&do7=2&ctrl=0
+DIset										http://hotel_ctrl/sysctrl.cgi?DIset=101&di0=2&di1=2&di2=2&di3=2&di4=2&di5=2&di6=2&di7=2
+RCipr										http://hotel_ctrl/sysctrl.cgi?
+RCfwu, RCfwu								http://hotel_ctrl/sysctrl.cgi?RCfwu=101&RCfwu=101
+RCblu, RCblu								http://hotel_ctrl/sysctrl.cgi?
+RCimu, RCimu, RCimg, RCimg					http://hotel_ctrl/sysctrl.cgi?
+BRset, BRset								http://hotel_ctrl/sysctrl.cgi?
+ALsos										http://hotel_ctrl/sysctrl.cgi?
+RCrst										http://hotel_ctrl/sysctrl.cgi?RCrst=101
+HCrst										http://hotel_ctrl/sysctrl.cgi?HCrst
+RTrst										http://hotel_ctrl/sysctrl.cgi?RTrst=101&OWadr=1
+tha,spt,dif,sta,mod,ctr,out,owa				http://hotel_ctrl/sysctrl.cgi?tha=101&spt=25&dif=1&sta=ON&mod=HEAT&ctr=ENA
+RMbed										http://hotel_ctrl/sysctrl.cgi?
+RSset,RSadr,RSgra,RSbra,RSbps				http://hotel_ctrl/sysctrl.cgi?
+RTfwu										http://hotel_ctrl/sysctrl.cgi?RTfwu=101&OWadr=1
+RTimu										http://hotel_ctrl/sysctrl.cgi?
+RTdtx										http://hotel_ctrl/sysctrl.cgi?RTdtx=101&RTrcl=2&RTrx0=0&RTry0=0&RTrx1=200&RTry1=200&RTtcl=5&RTtfs=10&RTtha=4&RTtva=4&RTtxt=Jebase%20Milosa%20i%20Urosa%20dvojica%20losa&OWadr=1
+RTset										http://hotel_ctrl/sysctrl.cgi?
+RTqra										http://hotel_ctrl/sysctrl.cgi?RTqra=101&RTqrc=http://web.infoimediadownloadMobilePoint.apkido+43707-r+101-gu+65483865jhgfzut7fjhgjd!-n+0&OWadr=1
+RTqrd										http://hotel_ctrl/sysctrl.cgi?RTqra=101&RTqrd&OWadr=1
+RTreq										http://hotel_ctrl/sysctrl.cgi?
+
+
+DISPLEJ SOBE - DODAJ / PROMJENI / BRISI PASSWORD GOSTA SOBE
+=================================================================================================================
+za sobu 101 dodaj password 1001 za gosta pod rednim brojem 1 koji vazi do 10h30min 16. decembra 2019. godine
+http://hotel_ctrl/sysctrl.cgi?set=101&psw=G1,1001,1030161219 
+
+password gosta 1 promjeni i dodaj jos dva delegata pod rednim brojem 3 i 7 
+http://hotel_ctrl/sysctrl.cgi?set=101&psw=G1,1001,1030161219,G3,3003,1030171219,G7,7007,1230250320
+
+ukini sve zaporke za goste sobe 101 osim Dzevadove sedmice:
+http://hotel_ctrl/sysctrl.cgi?set=101&psw=G1X,G2X,G3X,G4X,G5X,G6X,G8X
+
+
+DISPLEJ SOBE - RASPORED I FUNKCIJA PINOVA KONEKTORA NA PCB 
+=================================================================================================================
+pinovi konektora vertikalno prema nebu.lijevi konektor P12 komunikacija, od ruba pcb prema procesoru:
+
+1 - VSS-MINUS-MASA-GND
+2 - ONEWIRE INTERFACE
+3 - VCC +12Vdc NAPAJANJE ULAZ AKO JE U11 ZALEMLJEN
+4+5 VCC +5Vdc NAPAJANJE ULAZ (MAX. +6VDC)
+6 - RS485 INTERFACE - B LINIJA (NEGATIVNA U MIROVANJU)
+7 - RS485 INTERFACE - A LINIJA (POZITIVNA U MIROVANJU)
+8 - VSS-MINUS-MASA-GND
+
+
+desni konektor P11 digitalno analogni ulazi/izlazi, od ruba pcb prema procesoru:
+
+8 - VSS-MINUS-MASA-GND
+7 - ANALOGNI ULAZ DO +5Vdc (2K NTC, SENZOR_POPLAVE, SENZOR_ULAZNIH_VRATA) ILI DIGITALNI ULAZ DO +5Vdc (SOS, SOS RESET)
+6 - STATUS SIGNAL (BUZZER, LED, ZVONO ULAZNIH VRATA, KONTAKTER NAPAJANJA) ILI DIGITALNI IZLAZ DO +50Vdc I 0,5A 
+5 - VENTIL ILI AKTUATOR HLAÐENJA/GRIJANJA, DIGITALNI IZLAZ DO +50Vdc I 0,5A
+4 - ELEKTROBRAVA ULAZNIH VRATA, DIGITALNI IZLAZ DO +50Vdc I 0,5A
+3 - USLOV/KONTROLA GRIJANJA/HLAÐENJA, DIGITALNI ULAZ OMOGUCEN OD +3Vdc DO +12Vdc
+2 - USLOV/KONTROLA NAPAJANJA/GRIJANJA/HLAÐENJA, DIGITALNI ULAZ OMOGUCEN OD +3Vdc DO +12Vdc
+1 - VCC +5Vdc
+
+pored kristala 8MHz uz rub pcb:
+
+KONEKTOR P1 - ZA 3V LITIUM BACKUP BATERIJU SATA, PRETHODNO UKLONIT R24, MASA NA KVADRATNI PAD 
+KONEKTOR P2 - ANALOGNI ULAZ 0-3,3Vdc (10K NTC, REED KONTAKT, LIGHT SENZOR, TAMPER PREKIDAC) 
+KONEKTOR P3 - ANALOGNI ULAZ ZA 10K NTC, IZMJERENA VRIJEDNOST TEMPERATURE ZA KONTROLU GRIJANJA/HLAÐENJA
+
+sa donje strane pcb RedDragon426 potraziti medu oznakama parove pinova:				
+REDDRAGON426 PRVI 	 INTERFEJS ZA WIEGAND26 JESU (DATA0 = PB9, DATA1 = PB10)
+REDDRAGON426 DRUGI 	 INTERFEJS ZA WIEGAND26 JESU (DATA0 = PC6, DATA1 = PC7)
+REDDRAGON426 TRECI	 INTERFEJS ZA WIEGAND26 JESU (DATA0 = PE2, DATA1 = PE3)
+REDDRAGON426 CETVRTI INTERFEJS ZA WIEGAND26 JESU (DATA0 = PE5, DATA1 = PE6)
+
+
+DISPLEJ SOBE - DIO (DIGITALNI ULAZI/IZLAZI) KONFIGURACIJA HTTP KOMANDOM
+=================================================================================================================
+konfiguracija digitalnih izlaza:	'0' forsirano iskljucen do sledeceg reseta, kada prelazi u omogucen '2' 
+									'1' forsirano  ukljucen do sledeceg reseta, kada prelazi u omogucen '2' 
+									'2' izlaz omogucen, stanje zavisi od procesa,
+									'3' izlaz onemogucen, stanje u kojem se zatekao kod komande 
+									'4' izlaz uvijek ukljucen
+									'5' izlaz uvijek iskljucen
+
+primjer za omogucavanje svih digitalnih izlaza:
+http://hotel_ctrl/sysctrl.cgi?cdo=101&do0=2&do1=2&do2=2&do3=2&do4=2&do5=2&do6=2&do7=2&ctrl=0
+http://hotel_ctrl/sysctrl.cgi?cdo=102&do0=2&do1=2&do2=2&do3=2&do4=2&do5=2&do6=2&do7=2&ctrl=0
+http://hotel_ctrl/sysctrl.cgi?cdi=101&di0=0&di1=0&di2=0&di3=0&di4=0&di5=0&di6=0&di7=0
+http://hotel_ctrl/sysctrl.cgi?cdi=102&di0=2&di1=2&di2=2&di3=2&di4=2&di5=2&di6=2&di7=2
+
+
+
+DISPLEJ SOBE - UPDATE FIRMWERA PREKO ONEWIRE BUSA
+=================================================================================================================
+update firmvera termostata with one wire address 1: http://hotel_ctrl/sysctrl.cgi?tuf=101&tul=101&owa=1
+copy img22.bin on usd card
+tuf // first rs485 address of room controller
+tul // last rs485 address of room controller
+owa // one wire address of thermostat 
+
+
+
+DISPLEJ SOBE - DISPLEJ TEXTA U DEFINISANOM TEXT OKVIRU PREKO ONEWIRE BUSA
+=================================================================================================================
+display text: http://hotel_ctrl/sysctrl.cgi?txa=101&trc=2&tx0=0&ty0=0&tx1=200&ty1=200&txc=5&txf=10&txh=4&txv=4&txt=Jebase%20Milosa%20i%20Urosa%20dvojica%20losa&owa=1
+txa // rs485 address of room controller 
+trc // text room colour
+tx0 // text room upper left corner horisontal position
+ty0 // text room upper left corner vertical position
+tx1 // text room lower right corner horisontal position
+ty1 // text room lower right corner vertical position
+txc // text colour: 0~25 = BLUE,....TRANSPARENT
+txf // text font size: 0~11 = 8,10,13,13B,16,16B,20,20B,24,24B,32,32B
+txh // text horisontal align:0=LEFT,1=HORISONTAL,2=RIGHT,3=CENTER,4=HCENTER
+txv // text vertical align:0=TOP,1=VERTICAL,2=BOTTOM,3=BASELINE,4=VCENTER
+txt // text string
+owa // one wire address of thermostat 
+
+
+
+DISPLEJ SOBE - DISPLEJ QR KODA PREKO ONEWIRE BUSA
+=================================================================================================================
+display QR code: http://hotel_ctrl/sysctrl.cgi?qra=101&qrc=http://web.infoimediadownloadMobilePoint.apkido+43707-r+101-gu+65483865jhgfzut7fjhgjd!-n+0&owa=1
+				http://hotel_ctrl/sysctrl.cgi?qra=101&qrd&owa=1
+qra // rs485 address of room controller 
+qrc // upload qr code text. replace in qr code text char "&" with char "-", and char "=" with char "+"  http://web.infoimediadownloadMobilePoint.apkido=43707&r=101&gu=65483865jhgfzut7fjhgjd!&n=0
+qrd // display qr code text
+owa // one wire address of thermostat 
+
+
+
+DISPLEJ SOBE - UPDATE VREMENSKE PROGNOZE ZA 24 SATA 
+=================================================================================================================
+update weather forecast: http://hotel_ctrl/sysctrl.cgi?wfc=1,1,2,2,2,3,3,3,4,4,4,5,5,5,6,6,6
+wfc // values
+ACTUAL TEMPERATURE		int8  -127 ~ +127
+ACTUAL CLOUDNESS		uint8 	 1 ~ 7
+DAY + 1 HI TEMPERATURE	int8  -127 ~ +127
+DAY + 1 LO TEMPERATURE	int8  -127 ~ +127
+DAY + 1 CLOUDS			uint8	 1 ~ 7
+DAY + 2 HI TEMPERATURE	int8  -127 ~ +127
+DAY + 2 LO TEMPERATURE	int8  -127 ~ +127
+DAY + 2 CLOUDS			uint8	 1 ~ 7
+DAY + 3 HI TEMPERATURE	int8  -127 ~ +127
+DAY + 3 LO TEMPERATURE	int8  -127 ~ +127
+DAY + 3 CLOUDS			uint8	 1 ~ 7
+DAY + 4 HI TEMPERATURE	int8  -127 ~ +127
+DAY + 4 LO TEMPERATURE	int8  -127 ~ +127
+DAY + 4 CLOUDS			uint8	 1 ~ 7
+DAY + 5 HI TEMPERATURE	int8  -127 ~ +127
+DAY + 5 LO TEMPERATURE	int8  -127 ~ +127
+DAY + 5 CLOUDS			uint8	 1 ~ 7
+
+
+HOTEL KONTROLER - NAPRAVI NOVI DIREKTORIJ NA uSD KARTICI
+=========================================================
+naziv direktorija je max. osam slova:
+http://hotel_ctrl/sysctrl.cgi?MKdir=ime8char
+
+
+HOTEL KONTROLER - POKRENI UPDATE FIRMWERA
+==========================================
+kontroler hotela update firmvera:
+http://hotel_ctrl/sysctrl.cgi?HCfwu
+http://hotel_ctrl/sysctrl.cgi?fwu=hc
+
+
+HOTEL KONTROLER - WIEGAND26 INTERFEJSI SPAJANJE I TESTIRANJE
+=================================================================================================================
+sa donje strane pcb RedDragon426 potraziti medu oznakama parove pinova:				
+REDDRAGON429 PRVI 	 INTERFEJS ZA WIEGAND26 JESU (DATA0 = PB9, DATA1 = PB10)
+REDDRAGON429 DRUGI 	 INTERFEJS ZA WIEGAND26 JESU (DATA0 = PC6, DATA1 = PC7)
+REDDRAGON429 TRECI	 INTERFEJS ZA WIEGAND26 JESU (DATA0 = PE2, DATA1 = PE3)
+REDDRAGON429 CETVRTI INTERFEJS ZA WIEGAND26 JESU (DATA0 = PE5, DATA1 = PE6)
+
+nisu potrebni pullup otpornici jer su vec ugradeni u keypad/rfid citace.
+u http komandi treba zamjeniti sve karaktere hash '#' sa znakom postotka '%'.
+primjer http zahtjeva za upis pasworda '5252' za petog gosta u reader/keypad na drugom wiegand interfejsu:
+
+http://hotel_ctrl/sysctrl.cgi?wgi=2&wgd=*999999%15%5252%*
+
+vrijeme transfera komade je odprilike 300ms * broj karaktera u stringu komande. duzina stringa komade je ogranicena 
+rezervisanim bufom i najvise je 64 karaktera u jednoj komadi, sto se prije slanja parsira na 64*4 karaktera u buferu.
+primjeri za testiranje sva cetiri wiegand26 interfejsa (dodaj pin):
+
+http://hotel_ctrl/sysctrl.cgi?wgi=1&wgd=*999999%11%1111%* 
+http://hotel_ctrl/sysctrl.cgi?wgi=2&wgd=*999999%11%2222%*
+http://hotel_ctrl/sysctrl.cgi?wgi=3&wgd=*999999%11%3333%*
+http://hotel_ctrl/sysctrl.cgi?wgi=4&wgd=*999999%11%4444%*
+
+primjeri za testiranje sva cetiri wiegand26 interfejsa (brisi pin):
+
+http://hotel_ctrl/sysctrl.cgi?wgi=1&wgd=*999999%21%1111%* 
+http://hotel_ctrl/sysctrl.cgi?wgi=2&wgd=*999999%21%2222%*
+http://hotel_ctrl/sysctrl.cgi?wgi=3&wgd=*999999%21%3333%*
+http://hotel_ctrl/sysctrl.cgi?wgi=4&wgd=*999999%21%4444%*
+
+
+
+
+
+
+
+
+
+
+
+

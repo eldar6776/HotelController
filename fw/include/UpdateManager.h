@@ -84,6 +84,10 @@ public:
     UpdateManager();
     void Initialize(Rs485Service* pRs485Service, SpiFlashStorage* pSpiStorage);
 
+    SpiFlashStorage* m_spi_storage;
+
+    // Podrzavamo samo jednu sesiju odjednom
+    UpdateSession m_session;
     /**
      * @brief Poziva HttpServer da zapocne novu sesiju, koristi Update CMD kod.
      */
@@ -104,10 +108,6 @@ private:
     bool PrepareSession(UpdateSession* s, uint8_t updateCmd); 
 
     Rs485Service* m_rs485_service;
-    SpiFlashStorage* m_spi_storage;
-
-    // Podrzavamo samo jednu sesiju odjednom
-    UpdateSession m_session;
 };
 
 #endif // UPDATE_MANAGER_H

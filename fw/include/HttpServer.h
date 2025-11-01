@@ -13,8 +13,7 @@
 #ifndef HTTP_SERVER_H
 #define HTTP_SERVER_H
 
-
-// --- RJEŠAVANJE KONFLIKTA MAKROA (za SdFat/FS redefinicije) ---
+// --- RJEŠAVANJE KONFLIKTA MAKROA (FS/SdFat) ---
 #ifdef FILE_READ
 #undef FILE_READ
 #endif
@@ -31,6 +30,7 @@
 class HttpQueryManager;
 class UpdateManager;
 class EepromStorage;
+class SpiFlashStorage; // Za Upload
 
 class HttpServer
 {
@@ -39,14 +39,19 @@ public:
     void Initialize(
         HttpQueryManager* pHttpQueryManager,
         UpdateManager* pUpdateManager,
-        EepromStorage* pEepromStorage
+        EepromStorage* pEepromStorage,
+        SpiFlashStorage* pSpiFlashStorage // Dodato za upload
     );
 
 private:
     void HandleSysctrlRequest(AsyncWebServerRequest *request);
     void HandleFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
     void HandleNotFound(AsyncWebServerRequest *request);
-    String ParseMacros(String input); // Za `RCgra`, `RSbra` itd.
+    
+    // Funkcije za parsiranje
+    String ParseMacros(String input); 
+    uint32_t IpStringToUint(const String& ipString);
+    bool StartUpdateSession(AsyncWebServerRequest *request, uint8_t updateCmd, const String& addrParam, const String& lastAddrParam);
 
     AsyncWebServer m_server;
 
@@ -54,6 +59,7 @@ private:
     HttpQueryManager* m_http_query_manager;
     UpdateManager* m_update_manager;
     EepromStorage* m_eeprom_storage;
+    SpiFlashStorage* m_spi_storage; // Za file upload
 };
 
 #endif // HTTP_SERVER_H

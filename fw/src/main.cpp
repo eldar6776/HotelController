@@ -65,7 +65,12 @@ void setup()
     g_timeSync.Initialize(&g_rs485Service);
 
     Serial.println(F("[setup] Inicijalizacija HTTP Servera..."));
-    g_httpServer.Initialize(&g_httpQueryManager, &g_updateManager, &g_eepromStorage);
+    g_httpServer.Initialize(
+        &g_httpQueryManager,
+        &g_updateManager,
+        &g_eepromStorage,
+        &g_spiFlashStorage // ISPRAVLJENA GREŠKA: Dodan četvrti argument
+    );
 
     // --- FAZA 4: Pokretanje FreeRTOS Zadataka ---
     Serial.println(F("[setup] Pokretanje Rs485Service zadatka..."));

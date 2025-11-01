@@ -25,6 +25,7 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include "ProjectConfig.h"
+#include "index_html.h" // Uključujemo naš novi frontend
 
 // Proslijedjujemo forward-deklaracije nasih Menadzera
 class HttpQueryManager;
@@ -40,10 +41,11 @@ public:
         HttpQueryManager* pHttpQueryManager,
         UpdateManager* pUpdateManager,
         EepromStorage* pEepromStorage,
-        SpiFlashStorage* pSpiFlashStorage // Dodato za upload
+        SpiFlashStorage* pSpiFlashStorage 
     );
 
 private:
+    void HandleRoot(AsyncWebServerRequest *request); // Servira frontend
     void HandleSysctrlRequest(AsyncWebServerRequest *request);
     void HandleFileUpload(AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final);
     void HandleNotFound(AsyncWebServerRequest *request);
@@ -52,6 +54,11 @@ private:
     String ParseMacros(String input); 
     uint32_t IpStringToUint(const String& ipString);
     bool StartUpdateSession(AsyncWebServerRequest *request, uint8_t updateCmd, const String& addrParam, const String& lastAddrParam);
+
+    // Pomoćne funkcije za parsiranje listi (iz httpd_cgi_ssi.c)
+    void BuildAddressList(const String& firstAddrStr, const String& lastAddrStr, uint16_t* list, uint16_t* count);
+    void BuildFileList(const String& firstFileStr, const String& lastFileStr, uint8_t* list, uint16_t* count);
+
 
     AsyncWebServer m_server;
 

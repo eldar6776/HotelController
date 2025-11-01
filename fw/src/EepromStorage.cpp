@@ -132,6 +132,7 @@ void EepromStorage::LoggerInit()
     m_log_write_index = 0;
     m_log_read_index = 0;
     m_log_count = 0;
+    // TODO: Implementirati skeniranje (kao u hotel_ctrl.c lin. 204-367)
 }
 
 LoggerStatus EepromStorage::WriteLog(const LogEntry* entry)
@@ -148,7 +149,7 @@ LoggerStatus EepromStorage::WriteLog(const LogEntry* entry)
     uint16_t write_addr = EEPROM_LOG_START_ADDR + (m_log_write_index * LOG_RECORD_SIZE);
 
     // 1. Status Byte
-    write_buffer[0] = STATUS_BYTE_VALID; // Rjesava gresku: STATUS_BYTE_VALID
+    write_buffer[0] = STATUS_BYTE_VALID; 
     
     // 2. Kopiraj LogEntry (sigurno koristimo stvarnu veličinu strukture i popunimo ostatak nulama)
     size_t entry_copy_size = min((size_t)LOG_ENTRY_SIZE, sizeof(LogEntry));
@@ -178,7 +179,7 @@ LoggerStatus EepromStorage::GetOldestLog(LogEntry* entry)
     }
     
     // Citamo 1 bajt (status) + LOG_ENTRY_SIZE bajtova podataka
-    uint8_t read_buffer[LOG_ENTRY_SIZE + 1];
+    uint8_t read_buffer[LOG_RECORD_SIZE];
 
     uint16_t read_addr = EEPROM_LOG_START_ADDR + (m_log_read_index * LOG_RECORD_SIZE); 
     
@@ -215,7 +216,7 @@ LoggerStatus EepromStorage::DeleteOldestLog()
     uint16_t status_addr = EEPROM_LOG_START_ADDR + (m_log_read_index * LOG_RECORD_SIZE);
     
     // Brisemo samo statusni bajt
-    uint8_t empty_byte = STATUS_BYTE_EMPTY; // Rjesava gresku: STATUS_BYTE_EMPTY
+    uint8_t empty_byte = STATUS_BYTE_EMPTY; 
     
     if (!WriteBytes(status_addr, &empty_byte, 1))
     {
@@ -239,4 +240,44 @@ bool EepromStorage::ReadAddressList(uint16_t* listBuffer, uint16_t maxCount, uin
     }
     *actualCount = 0;
     return false;
+}
+
+// ============================================================================
+// --- ISPRAVKA: DODATA FUNKCIJA KOJA NEDOSTAJE ---
+// ============================================================================
+LoggerStatus EepromStorage::ClearAllLogs()
+{
+    Serial.println(F("[EepromStorage] Brisanje svih logova..."));
+
+    // Pripremi buffer sa 0xFF (STATUS_BYTE_EMPTY)
+    uint8_t empty_buffer[EEPROM_PAGE_SIZE];
+    memset(empty_buffer, STATUS_BYTE_EMPTY, EEPROM_PAGE_SIZE);
+
+    uint32_t bytes_to_clear = EEPROM_LOG_AREA_SIZE;
+    uint16_t current_address = EEPROM_LOG_START_ADDR;
+
+    while (bytes_to_clear > 0)
+    {
+        // Odredi koliko pisati u ovom ciklusu (do kraja stranice)
+        uint16_t page_offset = current_address % EEPROM_PAGE_SIZE;
+        uint16_t bytes_to_end_of_page = EEPROM_PAGE_SIZE - page_offset;
+        uint16_t chunk_size = min((uint16_t)bytes_to_clear, bytes_to_end_of_page);
+        
+        if (!WriteBytes(current_address, empty_buffer, chunk_size))
+        {
+            Serial.println(F("[EepromStorage] GRESKA pri brisanju logova."));
+            return LoggerStatus::LOGGER_ERROR;
+        }
+        
+        bytes_to_clear -= chunk_size;
+        current_address += chunk_size;
+    }
+
+    // Resetuj head/tail pokazivače
+    m_log_write_index = 0;
+    m_log_read_index = 0;
+    m_log_count = 0;
+
+    Serial.println(F("[EepromStorage] Svi logovi obrisani."));
+    return LoggerStatus::LOGGER_OK;
 }

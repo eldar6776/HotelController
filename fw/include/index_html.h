@@ -2,7 +2,7 @@
 
 #include <pgmspace.h>
 
-// Sadržaj preuzet direktno iz sysctrl.html
+// Sadržaj preuzet iz sysctrl.html + NOVE FUNKCIJE
 const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
 <html>
@@ -12,27 +12,40 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     <meta content="MSHTML 6.00.2800.1561" name="GENERATOR">
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f4; }
-        .container { max-width: 800px; margin: auto; background: #fff; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .container { max-width: 900px; margin: auto; background: #fff; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
         hr { border: 0; border-top: 1px solid #ddd; }
         input[type="number"], select { width: 100px; padding: 5px; }
         input[type="button"] { padding: 8px 12px; background: #007bff; color: white; border: none; cursor: pointer; border-radius: 4px; margin: 2px; }
         input[type="button"]:hover { background: #0056b3; }
-        #log0 { display: block; margin-top: 15px; padding: 10px; border: 1px solid #ccc; background: #fafafa; min-height: 40px; }
+        #log0 { display: block; margin-top: 15px; padding: 10px; border: 1px solid #ccc; background: #fafafa; min-height: 40px; white-space: pre-wrap; }
+        
+        /* NEW: File Browser Styles */
+        .file-section { margin-top: 30px; padding: 15px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 5px; }
+        .file-list { max-height: 300px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; background: white; }
+        .file-item { padding: 8px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+        .file-item:hover { background: #f0f0f0; }
+        .file-name { font-family: 'Courier New', monospace; flex-grow: 1; }
+        .file-size { color: #666; margin-right: 10px; }
+        .delete-btn { padding: 4px 8px; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.9em; }
+        .delete-btn:hover { background: #c82333; }
+        .refresh-btn { background: #28a745; }
+        .refresh-btn:hover { background: #218838; }
     </style>
 </head>
 <body>
     <div class="container">
+    <h2>ESP32 Hotel Controller - Web Interface</h2>
     <br>
-    Prva/Odabrana adresa.......<input id="kont101" value="100" type="number" min="1" max="65000" onchange="kont102.value = this.value" title="Jedina odabrana adresa za sve komande ako je zadnja/nova adresa ista ili prva odabrana adresa u rasponu do zadnje adrese. Odabirom adrese rs485 interfejsa glavnog kontrolera, po defaultu = 5, komanda se odnosi na glavni kontroler">
+    Prva/Odabrana adresa.......<input id="kont101" value="100" type="number" min="1" max="65000" onchange="kont102.value = this.value">
     <hr>
-    Zadnja/Nova adresa..........<input id="kont102" value="100" type="number" min="1" max="65000" title="zadnja odabrana adresa u rasponu za update komande ili nova adresa kontrolera"> &nbsp; &nbsp; &nbsp;
+    Zadnja/Nova adresa..........<input id="kont102" value="100" type="number" min="1" max="65000"> &nbsp; &nbsp; &nbsp;
     <hr>
-    Grupna adresa..................<input id="kont103" value="26486" type="number" min="1" max="65000" title="grupna adresa kontrolera za sinhronizovane komande grupama: pozarni put, kontrola rasvjete sprata, novi zurnal za sprat"> &nbsp; &nbsp; &nbsp;
+    Grupna adresa..................<input id="kont103" value="26486" type="number" min="1" max="65000"> &nbsp; &nbsp; &nbsp;
     <hr>
-    Broadcast adresa..............<input id="kont104" value="39321" type="number" min="1" max="65000" title="zajednicka adresa za cijeli sistem za sinhronizovane komande svim uredjajima: vrijeme, kontrola rasvjete balkona, pozarni put, zurnal za sistem...."> &nbsp;
+    Broadcast adresa..............<input id="kont104" value="39321" type="number" min="1" max="65000"> &nbsp;
     <hr>
     RS485 interface baudrate:
-    <select id="kont105" name="interface_baudrate" title="brzina rs485 interfejsa kontrolera sobe mora biti ista kao i kod glavnog kontrolera za uspjesnu komunikaciju. Za promjenu brzine rs485 interfejsa glavnog kontrolera, prva i zadnja odabrana adresa trebaju biti rs485 adresa interfejsa glavnog kontrolera, po defaultu = 5 ">
+    <select id="kont105" name="interface_baudrate">
         <option value="0">2400 bps</option>
         <option value="1">4800 bps</option>
         <option value="2">9600 bps</option>
@@ -44,19 +57,27 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <option value="8">460800 bps</option>
         <option value="9">921600 bps</option>
     </select>
-    <input id="kont106" value="Promjena adresa" type="button" onclick="send_event(106)" title="promjena postavki rs485 interfejsa ukljucuje i vrijednost brzine interfejsa !!!">
+    <input id="kont106" value="Promjena adresa" type="button" onclick="send_event(106)">
     <hr>
-    <input id="kont201" value="Podesi vrijeme" type="button" onclick="set_time()" title="podesi tacno vrijeme i datum sistema prema lokalnom vremenu racunara">
-    <input id="kont202" value="Pregledaj log" type="button" onclick="get_log()" title="pregledaj zadnji blok log liste">
-    <input id="kont203" value="Obrisi log" type="button" onclick="delete_log()" title="obrisi zadnji blok log liste">
-    <input id="kont204" value="Brisi log listu" type="button" onclick="delete_log_list()" title="obrisi cijelu log listu">
+    
+    <!-- NEW: Address List Management -->
+    <h3>Upravljanje Listom Adresa</h3>
+    <input value="Učitaj Listu Kontrolera" type="button" onclick="load_address_list()" 
+           title="Učitava CTRL_ADD.TXT sa uSD kartice i kešira u EEPROM">
+    <span style="color: #666; font-size: 0.9em;">(Učitava iz CTRL_ADD.TXT na uSD kartici)</span>
+    <hr>
+    
+    <input id="kont201" value="Podesi vrijeme" type="button" onclick="set_time()">
+    <input id="kont202" value="Pregledaj log" type="button" onclick="get_log()">
+    <input id="kont203" value="Obrisi log" type="button" onclick="delete_log()">
+    <input id="kont204" value="Brisi log listu" type="button" onclick="delete_log_list()">
     <br>
     <br>
     <span id="log0">Status: Spreman.</span>
     <hr>
-    <input id="kont301" value="Provjeri status" type="button" onclick="send_event(301)" title="zahtjev za status kontrolera sobe sa adresom podesenom u input boksu Prva/Odabrana adresa i pregled vracenog odgovora">
+    <input id="kont301" value="Provjeri status" type="button" onclick="send_event(301)">
     Promjeni status:
-    <select id="kont302" onchange="send_event(302)" title="promjeni status kontrolera sobe sa adresom podesenom u input boksu Prva/Odabrana adresa">
+    <select id="kont302" onchange="send_event(302)">
         <option value="0">U pripremi</option>
         <option value="1">Spremna</option>
         <option value="2">Zauzeta</option>
@@ -71,33 +92,33 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <option value="11">Pozarni put</option>
     </select>
     <hr>
-    Podesi period zamjene posteljine: <input id="kont303" onchange="send_event(303)" value="0" type="number" min="0" max="99" title="period ponavljanja u danima, zahtjeva za zamjenu posteljine kontrolera sobe, sa adresom podesenom u input boksu Prva/Odabrana adresa, vrijednost  0 = nula iskljucuje funkciju. Vrijednost brojaca aktivne funkcije se može resetovati na 0 = nulu tako da se status sa bilo kojeg drugog promjeni na status U PRIPREMI">
+    Podesi period zamjene posteljine: <input id="kont303" onchange="send_event(303)" value="0" type="number" min="0" max="99">
     <hr>
-    Podesi osvjetljenje displeja......... <input id="kont304" onchange="send_event(304)" value="500" type="number" min="100" max="900" title="podesi jacinu pozadinskog osvjetljenja lcd displeja kontrolera sobe sa adresom podesenom u input boksu Prva/Odabrana adresa">
-    <input id="kont305" value="Pregled slika" type="button" onclick="send_event(305)" title="komanda kontroleru sobe sa adresom podesenom u input boksu Prva/Odabrana adresa, za pregled svih slika na displeju, po redu, od prve do zadnje">
+    Podesi osvjetljenje displeja......... <input id="kont304" onchange="send_event(304)" value="500" type="number" min="100" max="900">
+    <input id="kont305" value="Pregled slika" type="button" onclick="send_event(305)">
     <hr>
-    <input id="kont408" onchange="send_event(408)" type="checkbox" value="0" title="selektuj ovo polje za forsiranje izlaza kontrolera sobe sa adresom podesenom u input boksu Prva/Odabrana adresa, a prema stanju checkbox kontrola 0 do 7. dok god je ova kontrola selektovana, digitalni izlazi na kontroleru sobe ce biti poostavljeni u stanje kontrola 0 do 7 bez bilo kakve promjene iz softvera kontrolera sobe">
+    <input id="kont408" onchange="send_event(408)" type="checkbox" value="0">
     Forsiraj digitalne izlaze...
-    0<input id="kont400" onchange="send_event(408)" type="checkbox" value="0" title="izlaz kontakter napajanja">
-    1<input id="kont401" onchange="send_event(408)" type="checkbox" value="0" title="izlaz DND modul">
-    2<input id="kont402" onchange="send_event(408)" type="checkbox" value="0" title="izlaz balkonska rasvjeta">
-    3<input id="kont403" onchange="send_event(408)" type="checkbox" value="0" title="izlaz zvono">
-    4<input id="kont404" onchange="send_event(408)" type="checkbox" value="0" title="izlaz kontakter klime">
-    5<input id="kont405" onchange="send_event(408)" type="checkbox" value="0" title="izlaz termostat klime">
-    6<input id="kont406" onchange="send_event(408)" type="checkbox" value="0" title="izlaz elektro brava">
-    7<input id="kont407" onchange="send_event(408)" type="checkbox" value="0" title="izlaz buzzer">
+    0<input id="kont400" onchange="send_event(408)" type="checkbox" value="0">
+    1<input id="kont401" onchange="send_event(408)" type="checkbox" value="0">
+    2<input id="kont402" onchange="send_event(408)" type="checkbox" value="0">
+    3<input id="kont403" onchange="send_event(408)" type="checkbox" value="0">
+    4<input id="kont404" onchange="send_event(408)" type="checkbox" value="0">
+    5<input id="kont405" onchange="send_event(408)" type="checkbox" value="0">
+    6<input id="kont406" onchange="send_event(408)" type="checkbox" value="0">
+    7<input id="kont407" onchange="send_event(408)" type="checkbox" value="0">
     <hr>
-    <input value="Reset glavnog kontrolera" type="button" onclick="send_event(450)" title="resetuj direktnom komandom glavni kontroler">
-    <input value="Reset adresiranog kontrolera" type="button" onclick="send_event(451)" title="resetuj kontroler sobe sa adresom podesenom u input boksu Prva/Odabrana adresa">
-    <input value="Reset SOS" type="button" onclick="send_event(452)" title="resetuj SOS alarm kontrolera sobe sa adresom podesenom u input boksu Prva/Odabrana adresa, ili SOS alarm na glavnom kontroleru odabirom adrese rs485 interfejsa glavnog kontrolera u input boksu Prva/Odabrana adresa, a po defaultu = 5">
+    <input value="Reset glavnog kontrolera" type="button" onclick="send_event(450)">
+    <input value="Reset adresiranog kontrolera" type="button" onclick="send_event(451)">
+    <input value="Reset SOS" type="button" onclick="send_event(452)">
     <hr>
-    <input value="Update Firmwarea" type="button" onclick="send_event(480)" title="komanda za update firmwera adresiranog kontrolera. prethodno je potrebno komandom za prenos slika izvrsiti transfer slike img20.raw koja je preimenovani binarni fajl novog firmwera kontrolera sobe. odabirom adrese rs485 interfejsa glavnog kontrolera u input boksu Prva/Odabrana adresa, a po defaultu = 5, komanda se odnosi na glavni kontroler za koji je potrebno prethodno tftp klijentom uploadowati novi firmware CTRL_NEW.BIN ili kopirati na uSD karticu">
-    <input value="Update Bootloadera" type="button" onclick="send_event(481)" title="komanda za update bootloadera adresiranog kontrolera. prethodno je potrebno komandom za prenos slika izvrsiti transfer slike img21.raw koja je preimenovani binarni fajl novog bootloadera kontrolera sobe.  odabirom adrese rs485 interfejsa glavnog kontrolera u input boksu Prva/Odabrana adresa, a po defaultu = 5, komanda se odnosi na glavni kontroler za koji je potrebno prethodno tftp klijentom uploadowati novi firmware CTRL_NEW.BIN ili kopirati na uSD karticu">
-    <input value="Update config listom" type="button" onclick="send_event(482)" title="pokreni update koji je prethodno upisan u fajl UPDATE.CFG i uploadovan na glavni kontroler">
+    <input value="Update Firmwarea" type="button" onclick="send_event(480)">
+    <input value="Update Bootloadera" type="button" onclick="send_event(481)">
+    <input value="Update config listom" type="button" onclick="send_event(482)">
     <hr>
-    Prva slika: <input id="kont501" onchange="kont502.value = this.value" value="1" type="number" min="1" max="21" title="odabir prve od vise slika za update ili jedine odabrane">&nbsp;
-    Zadnja slika: <input id="kont502" onchange="" value="1" type="number" min="1" max="21" title="odabir poslednje slike kod više slika za update. za jednu sliku postaviti isti ili manji broj">&nbsp; &nbsp; &nbsp;
-    <input value="Update slika" type="button" onclick="send_event(503)" title="pokreni update slika odabranih od prve do zadnje i na adresirane kontrolere soba od Prve/Odabrane do Zadnje/Nove adrese">
+    Prva slika: <input id="kont501" onchange="kont502.value = this.value" value="1" type="number" min="1" max="21">&nbsp;
+    Zadnja slika: <input id="kont502" onchange="" value="1" type="number" min="1" max="21">&nbsp; &nbsp; &nbsp;
+    <input value="Update slika" type="button" onclick="send_event(503)">
     <hr>
     IP adresa............<input id="kont550" value="192" type="number" min="0" max="255"> <input id="kont551" value="168" type="number" min="0" max="255"> <input id="kont552" value="20" type="number" min="0" max="255"> <input id="kont553" value="199" type="number" min="0" max="255">
     <hr>
@@ -106,15 +127,33 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     Default Gateway.<input id="kont570" value="192" type="number" min="0" max="255"> <input id="kont571" value="168" type="number" min="0" max="255"> <input id="kont572" value="20" type="number" min="0" max="255"> <input id="kont573" value="1" type="number" min="0" max="255">
     <br>
     <br>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;  &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
-    <input value="Promjena IP adresa" type="button" onclick="send_event(575)" title="U slucaju pogresnih postavki i gubitka konekcije sa glavnim kontrolerom, pritisnuti i zadrzati srednji taster na glavnomm kontroleru. kada ccrvena LED treci puta zasvijetli, odmah otpustiti taster. ucitane su defaultne adrese, IP:192.168.20.199 SUBNET:255.255.255.0 GW:192.168.20.199">
+    <input value="Promjena IP adresa" type="button" onclick="send_event(575)">
     <hr>
     Sistem ID:..........<input id="kont580" value="43981" type="number" min="1" max="65000">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
-    <input value="Promjena ID sistema" type="button" onclick="send_event(581)" title="Promjena ID broja sistema za adresirani uredjaj u polju Prva/Odabrana adresa. Ako se komanda posalje na rs485 adresu glavnog kontrolera, defaultno = 5, momentalno ce biti broadcast adresom proslijedjena svim kontrolerima, sto znaci da ni jedna rfid kartica nece biti validna do sledeceg programiranja sa novim ID brojem sistema">
+    <input value="Promjena ID sistema" type="button" onclick="send_event(581)">
     <hr>
-    <input value="Tesni Zurnal  1" type="button" onclick="send_event(590)" title="testni zurnal text 1">
-    &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
-    <input value="Testni Zurnal 2" type="button" onclick="send_event(591)" title="testni zurnal text 1">
+    
+    <!-- NEW: File Upload Section -->
+    <div class="file-section">
+        <h3>Upload Fajlova na uSD Karticu</h3>
+        <form id="uploadForm" enctype="multipart/form-data">
+            <input type="file" id="fileInput" name="file" accept=".bin,.raw,.txt,.cfg">
+            <input type="button" value="Upload" onclick="upload_file()">
+        </form>
+        <div id="uploadProgress" style="margin-top: 10px; color: #666;"></div>
+    </div>
     <hr>
+    
+    <!-- NEW: File Browser Section -->
+    <div class="file-section">
+        <h3>File Browser (uSD Kartica)
+            <input type="button" class="refresh-btn" value="↻ Refresh" onclick="load_file_list()">
+        </h3>
+        <div id="fileList" class="file-list">
+            <p style="text-align: center; color: #999;">Klikni "Refresh" za učitavanje...</p>
+        </div>
+    </div>
+    
     </div>
 </body>
 </html>
@@ -139,39 +178,153 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 });
             })
             .then(text => {
-                show_response("Odgovor servera: " + text, false);
+                // Parse HTML i izvuci sadržaj između <div class="response">
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(text, 'text/html');
+                var responseDiv = doc.querySelector('.response');
+                var message = responseDiv ? responseDiv.textContent : text;
+                show_response("Odgovor: " + message, false);
             })
             .catch(e => {
                 show_response(`Greška: ${e.message}`, true);
             });
     }
 
-    // --- Funkcije preuzete iz sysctrl.html ---
+    // --- NEW: Load Address List ---
+    function load_address_list() {
+        show_response('Učitavam listu adresa sa uSD kartice...', false);
+        send_request("sysctrl.cgi?cad=load");
+    }
+
+    // --- NEW: File Upload ---
+    function upload_file() {
+        var fileInput = document.getElementById('fileInput');
+        var file = fileInput.files[0];
+        
+        if (!file) {
+            alert('Odaberi fajl prvo!');
+            return;
+        }
+        
+        var formData = new FormData();
+        formData.append('file', file);
+        
+        document.getElementById('uploadProgress').textContent = 'Uploading ' + file.name + '...';
+        
+        fetch('/upload-firmware?file=' + encodeURIComponent(file.name), {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.text())
+        .then(text => {
+            document.getElementById('uploadProgress').textContent = 'Upload OK: ' + file.name;
+            document.getElementById('uploadProgress').style.color = 'green';
+            setTimeout(load_file_list, 500); // Refresh file list
+        })
+        .catch(e => {
+            document.getElementById('uploadProgress').textContent = 'Upload ERROR: ' + e.message;
+            document.getElementById('uploadProgress').style.color = 'red';
+        });
+    }
+
+    // --- NEW: Load File List ---
+    function load_file_list() {
+        fetch('/list_files')
+            .then(response => response.json())
+            .then(data => {
+                var fileListDiv = document.getElementById('fileList');
+                fileListDiv.innerHTML = '';
+                
+                if (data.error) {
+                    fileListDiv.innerHTML = '<p style="color: red;">' + data.error + '</p>';
+                    return;
+                }
+                
+                if (data.files.length === 0) {
+                    fileListDiv.innerHTML = '<p style="text-align: center; color: #999;">Nema fajlova</p>';
+                    return;
+                }
+                
+                data.files.forEach(function(file) {
+                    if (!file.dir) {
+                        var fileItem = document.createElement('div');
+                        fileItem.className = 'file-item';
+                        
+                        var fileName = document.createElement('span');
+                        fileName.className = 'file-name';
+                        fileName.textContent = file.name;
+                        
+                        var fileSize = document.createElement('span');
+                        fileSize.className = 'file-size';
+                        fileSize.textContent = formatBytes(file.size);
+                        
+                        var deleteBtn = document.createElement('button');
+                        deleteBtn.className = 'delete-btn';
+                        deleteBtn.textContent = '✕ Delete';
+                        deleteBtn.onclick = function() {
+                            delete_file(file.name);
+                        };
+                        
+                        fileItem.appendChild(fileName);
+                        fileItem.appendChild(fileSize);
+                        fileItem.appendChild(deleteBtn);
+                        
+                        fileListDiv.appendChild(fileItem);
+                    }
+                });
+            })
+            .catch(e => {
+                document.getElementById('fileList').innerHTML = '<p style="color: red;">Greška: ' + e.message + '</p>';
+            });
+    }
+
+    // --- NEW: Delete File ---
+    function delete_file(filename) {
+        if (!confirm('Obriši fajl: ' + filename + '?')) {
+            return;
+        }
+        
+        fetch('/delete_file?file=' + encodeURIComponent(filename))
+            .then(response => response.text())
+            .then(text => {
+                alert(text);
+                load_file_list(); // Refresh
+            })
+            .catch(e => {
+                alert('Greška: ' + e.message);
+            });
+    }
+
+    // Helper: Format bytes
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        var k = 1024;
+        var sizes = ['B', 'KB', 'MB', 'GB'];
+        var i = Math.floor(Math.log(bytes) / Math.log(k));
+        return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+    }
+
+    // --- Original Functions ---
     function get_log() {
-        show_response('Zahtjev poslan', false);
         send_request("sysctrl.cgi?log=3");
     }
     function delete_log() {
-        show_response("Zahtjev za brisanje", false);
         send_request("sysctrl.cgi?log=4");
     }
     function delete_log_list() {
-        show_response("Zahtjev za brisanje", false);
         send_request("sysctrl.cgi?log=5");
     }
     function set_time() {
-        var htt = "";
         var currentTime = new Date();
         var month = addZero(currentTime.getMonth() + 1);
         var weekday = (currentTime.getDay());
-        if (weekday === 0) weekday = 7; // JS D=0 -> Protokol D=7
+        if (weekday === 0) weekday = 7;
         var day = addZero(currentTime.getDate());
         var year = addZero(currentTime.getFullYear());
         var hours = addZero(currentTime.getHours());
         var minutes = addZero(currentTime.getMinutes());
         var sec = addZero(currentTime.getSeconds());
-        // Format: WDDMMYYYYHHMMSS
-        htt = "sysctrl.cgi?tdu=" + weekday + day + month + year + hours + minutes + sec;
+        var htt = "sysctrl.cgi?tdu=" + weekday + day + month + year + hours + minutes + sec;
         send_request(htt);
     }
     function addZero(i) {
@@ -219,7 +372,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             htt = "sysctrl.cgi?cdo=" + document.getElementById("kont101").value + "&do0=" + n0 + "&do1=" + n1 + "&do2=" + n2 + "&do3=" + n3 + "&do4=" + n4 + "&do5=" + n5 + "&do6=" + n6 + "&do7=" + n7 + "&ctrl=" + n8;
         }
         else if (t == "450") {
-            htt = "sysctrl.cgi?rst=0"; // Koristi 0 za HC kao u starom kodu
+            htt = "sysctrl.cgi?rst=0";
         }
         else if (t == "451") {
             htt = "sysctrl.cgi?rst=" + document.getElementById("kont101").value;
@@ -237,9 +390,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             htt = "sysctrl.cgi?cfg=run";
         }
         else if (t == "503") {
-            // GREŠKA u originalnom JS: ifa/ila i kont101/102 su zamijenjeni.
-            // Original: iuf=slika1&iul=slika2&ifa=adresa1&ila=adresa2
-            // Ispravljeno prema Procitaj.txt (iuf=adresa1, ifa=slika1):
             htt = "sysctrl.cgi?iuf=" + document.getElementById("kont101").value + "&iul=" + document.getElementById("kont102").value +
                 "&ifa=" + document.getElementById("kont501").value + "&ila=" + document.getElementById("kont502").value;
         }
@@ -251,12 +401,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         }
         else if (t == "581") {
             htt = "sysctrl.cgi?sid=" + document.getElementById("kont101").value + "&nid=" + document.getElementById("kont580").value;
-        }
-        else if (t == "590") {
-            htt = "sysctrl.cgi?HSset=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,1,2,3,4;";
-        }
-        else if (t == "591") {
-            htt = "sysctrl.cgi?HSset=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,19,18,17,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0,1,2,3,4;";
         }
         
         if (htt) {

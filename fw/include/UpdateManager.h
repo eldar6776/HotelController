@@ -6,7 +6,7 @@
  *
  * @note
  * Upravlja logikom update-a (FWR, BLDR, Slike).
- * Bazirano na 'update_manager.c'.
+ * REFAKTORISAN: Čita fajlove sa uSD kartice umjesto SPI Flash-a.
  * Implementira IRs485Manager interfejs.
  ******************************************************************************
  */
@@ -24,7 +24,8 @@
 // ------------------------------------------------------------
 
 #include "Rs485Service.h"
-#include "SpiFlashStorage.h"
+#include "SdCardManager.h"
+#include <SD.h>
 
 // Stanja iz 'update_manager.c'
 enum UpdateState
@@ -57,7 +58,7 @@ enum UpdateType
 #define CMD_IMG_RC_END      0x71U // DWNLD_DISP_IMG_14
 #define CMD_IMG_COUNT       (CMD_IMG_RC_END - CMD_IMG_RC_START + 1)
 
-// Sesija iz 'update_manager.c'
+// Sesija iz 'update_manager.c' - REFAKTORISANA
 struct UpdateSession
 {
     UpdateState state;
@@ -65,7 +66,11 @@ struct UpdateSession
     uint8_t     clientAddress;
     uint32_t    fw_size;       
     uint32_t    fw_crc;        
-    uint32_t    fw_address_slot; 
+    
+    // REMOVED: uint32_t fw_address_slot; - više ne koristimo Flash adrese
+    // NEW: Filesystem support
+    String      filename;      // Ime fajla na uSD kartici (npr. "/NEW.BIN")
+    File        fw_file;       // File objekat za čitanje tokom update-a
     
     uint32_t    bytesSent;
     uint32_t    currentSequenceNum;
@@ -82,14 +87,16 @@ class UpdateManager : public IRs485Manager
 {
 public:
     UpdateManager();
-    void Initialize(Rs485Service* pRs485Service, SpiFlashStorage* pSpiStorage);
+    void Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCardManager);
 
-    SpiFlashStorage* m_spi_storage;
+    // CHANGED: Pokazivač na SdCardManager umjesto SpiFlashStorage
+    SdCardManager* m_sd_card_manager;
 
-    // Podrzavamo samo jednu sesiju odjednom
+    // Podržavamo samo jednu sesiju odjednom
     UpdateSession m_session;
+    
     /**
-     * @brief Poziva HttpServer da zapocne novu sesiju, koristi Update CMD kod.
+     * @brief Poziva HttpServer da započne novu sesiju, koristi Update CMD kod.
      */
     bool StartSession(uint8_t clientAddress, uint8_t updateCmd);
 
@@ -104,8 +111,12 @@ private:
     void SendFinishRequest(UpdateSession* s);
     void CleanupSession(UpdateSession* s);
     
-    // Pomoćna funkcija za određivanje Flash adrese i čitanje meta podataka
+    // REFAKTORISANA: Određuje ime fajla, otvara ga i čita metadatu
     bool PrepareSession(UpdateSession* s, uint8_t updateCmd); 
+
+    // NEW: Pomoćne funkcije za CRC32
+    uint32_t CalculateCRC32(File& file);
+    bool ReadMetadataFromFile(const String& metaFilePath, uint32_t* size, uint32_t* crc);
 
     Rs485Service* m_rs485_service;
 };

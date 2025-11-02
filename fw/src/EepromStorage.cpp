@@ -229,6 +229,27 @@ LoggerStatus EepromStorage::DeleteOldestLog()
     return LoggerStatus::LOGGER_OK;
 }
 
+// Implementacija WriteAddressList
+bool EepromStorage::WriteAddressList(const uint16_t* listBuffer, uint16_t count)
+{
+    // Pretvaramo count uint16_t elemenata u bajtove
+    uint16_t bytes_to_write = count * sizeof(uint16_t);
+
+    if (bytes_to_write > EEPROM_ADDRESS_LIST_SIZE) {
+        bytes_to_write = EEPROM_ADDRESS_LIST_SIZE; // Osiguranje od preljeva
+        Serial.println(F("[EepromStorage] Upozorenje: Lista adresa je skraćena zbog ograničenja EEPROM-a."));
+    }
+    
+    // Upisujemo bajtove u EEPROM na definisanoj početnoj adresi
+    if (WriteBytes(EEPROM_ADDRESS_LIST_START_ADDR, (const uint8_t*)listBuffer, bytes_to_write))
+    {
+        Serial.printf("[EepromStorage] Uspješno zapisano %u adresa (%u B).\n", count, bytes_to_write);
+        return true;
+    }
+    Serial.println(F("[EepromStorage] GREŠKA: Pisanje liste adresa neuspješno."));
+    return false;
+}
+
 bool EepromStorage::ReadAddressList(uint16_t* listBuffer, uint16_t maxCount, uint16_t* actualCount)
 {
     uint16_t bytes_to_read = min((uint16_t)EEPROM_ADDRESS_LIST_SIZE, (uint16_t)(maxCount * sizeof(uint16_t)));

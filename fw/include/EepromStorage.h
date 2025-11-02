@@ -61,7 +61,8 @@ public:
 
     // --- API za Listu Adresa ---
     bool ReadAddressList(uint16_t* listBuffer, uint16_t maxCount, uint16_t* actualCount);
-
+    bool WriteAddressList(const uint16_t* listBuffer, uint16_t count);
+    
     // --- API za Logger (head/tail) ---
     LoggerStatus WriteLog(const LogEntry* entry);
     LoggerStatus GetOldestLog(LogEntry* entry);

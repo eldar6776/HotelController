@@ -3,48 +3,47 @@
  * @file    ProjectConfig.h
  * @author  Gemini & [Vase Ime]
  * @brief   Centralna konfiguracija za Hotel Controller ESP32
- * 
- * @note    UPDATED: Dinamička EEPROM mapa i povećana lista adresa na 500
+ * * @note    Pinout ažuriran na v11. Strategija skladištenja ostaje uSD kartica.
  ******************************************************************************
  */
 
 #pragma once
 
 //=============================================================================
-// 1. HARDVERSKA MAPA PINOVA (v11 - WT32-ETH01)
+// 1. HARDVERSKA MAPA PINOVA (v11 - Preuzeto iz README.md)
 //=============================================================================
 
 // --- RS485 INTERFEJS (Serial2) ---
-#define RS485_RX_PIN        5
-#define RS485_TX_PIN        17
-#define RS485_DE_PIN        33
+#define RS485_RX_PIN        5    //
+#define RS485_TX_PIN        17   //
+#define RS485_DE_PIN        33   //
 
 // --- I2C INTERFEJS (EEPROM) ---
-#define I2C_SDA_PIN         21
-#define I2C_SCL_PIN         22
+#define I2C_SDA_PIN         14   //
+#define I2C_SCL_PIN         15   //
 #define EEPROM_I2C_ADDR     0x50
 
-// --- SPI INTERFEJS (uSD kartica) ---
-#define SPI_SCK_PIN         14
-#define SPI_MISO_PIN        19
-#define SPI_MOSI_PIN        18
-#define SPI_FLASH_CS_PIN    23  // Koristi se za CS pin uSD kartice
+// --- SPI INTERFEJS (uSD kartica - Koristeći v11 pinove za Flash) ---
+#define SPI_SCK_PIN         12   //
+#define SPI_MOSI_PIN        4    //
+#define SPI_MISO_PIN        36   //
+#define SPI_FLASH_CS_PIN    32   // (Koristi se za CS pin uSD kartice)
 
 // --- Ethernet (ETH) ---
-#define ETH_MDC_PIN         23  // Konflikt sa Flash CS (Upravlja se softverski)
-#define ETH_MDIO_PIN        12
+#define ETH_MDC_PIN         23
+#define ETH_MDIO_PIN        12   // Konflikt sa SPI_SCK_PIN (Upravlja se softverski)
 #define ETH_POWER_PIN       16
 #define ETH_PHY_ADDR        1
 #define ETH_PHY_TYPE        ETH_PHY_LAN8720
-#define ETH_CLK_MODE        ETH_CLOCK_GPIO0_IN
+#define ETH_CLK_MODE        ETH_CLOCK_GPIO0_IN //
 
 // --- OSTALO ---
-#define STATUS_LED_PIN      2
-#define WIFI_RST_BTN_PIN    32
+#define STATUS_LED_PIN      2    //
+#define WIFI_RST_BTN_PIN    39   //
 #define SERIAL_DEBUG_BAUDRATE 115200
 
 //=============================================================================
-// 2. GLOBALNE KONSTANTE SISTEMA
+// 2. GLOBALNE KONSTANTE SISTEMA (Nepromijenjeno)
 //=============================================================================
 
 // --- RS485 Protokol ---
@@ -55,13 +54,11 @@
 #define RS485_RESP_TOUT_MS          RS485_TIMEOUT_MS
 
 // --- Polling i Logovanje ---
-#define MAX_ADDRESS_LIST_SIZE       500  // UPDATED: Povećano sa 64 na 500
+#define MAX_ADDRESS_LIST_SIZE       500
 #define LOG_ENTRY_SIZE              20
 #define MAX_LOG_ENTRIES             512
 #define STATUS_BYTE_VALID           0x55
 #define STATUS_BYTE_EMPTY           0xFF
-
-// Jedan zapis u EEPROM log oblasti = status byte + LOG_ENTRY_SIZE
 #define LOG_RECORD_SIZE             (LOG_ENTRY_SIZE + 1)
 
 // --- TimeSync / NTP ---
@@ -80,32 +77,18 @@
 #define MAX_PING_FAILURES           10
 
 //=============================================================================
-// 3. MEMORIJSKA MAPA EEPROM-a (DINAMIČKA - UPDATED)
+// 3. MEMORIJSKA MAPA EEPROM-a (DINAMIČKA - Nepromijenjeno)
 //=============================================================================
 
-// Struktura AppConfig (definisana u EepromStorage.h)
-// Za kalkulaciju veličine koristimo sizeof(AppConfig) u runtime-u
-
-// FIKSNA POČETNA ADRESA
 #define EEPROM_CONFIG_START_ADDR        0x0000
-
-// DINAMIČKA KALKULACIJA ADRESA (kompajler će izračunati u compile-time)
-// NAPOMENA: sizeof(AppConfig) = ~20 bytes, ali koristimo 256 za rezervu
-
-#define EEPROM_CONFIG_SIZE                  256  // Rezerva za buduća proširenja
-
-// Lista adresa slijedi odmah poslije konfiguracije
-#define EEPROM_ADDRESS_LIST_START_ADDR      (EEPROM_CONFIG_START_ADDR + EEPROM_CONFIG_SIZE)
-#define EEPROM_ADDRESS_LIST_SIZE            (MAX_ADDRESS_LIST_SIZE * sizeof(uint16_t))  // 500 * 2 = 1000 bytes
-
-// Log oblast slijedi odmah poslije liste adresa
-#define EEPROM_LOG_START_ADDR               (EEPROM_ADDRESS_LIST_START_ADDR + EEPROM_ADDRESS_LIST_SIZE)
-#define EEPROM_LOG_AREA_SIZE                (MAX_LOG_ENTRIES * LOG_RECORD_SIZE)  // 512 * 21 = 10752 bytes
-
-// UKUPNA KORIŠTENA MEMORIJA: 256 + 1000 + 10752 = 12008 bytes (~12KB od 128KB)
+#define EEPROM_CONFIG_SIZE              256
+#define EEPROM_ADDRESS_LIST_START_ADDR  (EEPROM_CONFIG_START_ADDR + EEPROM_CONFIG_SIZE)
+#define EEPROM_ADDRESS_LIST_SIZE        (MAX_ADDRESS_LIST_SIZE * sizeof(uint16_t))
+#define EEPROM_LOG_START_ADDR           (EEPROM_ADDRESS_LIST_START_ADDR + EEPROM_ADDRESS_LIST_SIZE)
+#define EEPROM_LOG_AREA_SIZE            (MAX_LOG_ENTRIES * LOG_RECORD_SIZE)
 
 //=============================================================================
-// 4. FILESYSTEM PATHS (uSD kartica)
+// 4. FILESYSTEM PATHS (uSD kartica - Nepromijenjeno)
 //=============================================================================
 
 // Firmware fajlovi
@@ -123,12 +106,10 @@
 #define PATH_UPDATE_CFG     "/UPDATE.CFG"
 
 //=============================================================================
-// 5. NAPOMENE ZA RAZVOJ
+// 5. NAPOMENE ZA RAZVOJ (Ažurirano)
 //=============================================================================
-
-// OBRISANE KONSTANTE (Više se ne koriste):
-// - SLOT_SIZE_* (sve Flash slot konstante)
-// - SLOT_ADDR_* (sve Flash adrese)
-// - VERS_INF_OFFSET (metadata offset u Flash-u)
-// 
-// RAZLOG: Prešli smo sa SPI Flash-a na FAT32 filesystem (uSD kartica)
+//
+// - AŽURIRANO: Mapa pinova (v11).
+// - ZADRŽANO: Strategija skladištenja na uSD kartici (FAT32).
+// - UPOZORENJE: GPIO12 (ETH_MDIO) i GPIO12 (SPI_SCK) su u konfliktu.
+//

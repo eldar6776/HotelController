@@ -195,35 +195,37 @@ bool Rs485Service::ValidatePacket(uint8_t* buffer, uint16_t length)
 
 void Rs485Service::HandleReceive()
 {
-    // Nastavi primanje bajtova
     while (m_rs485_serial.available())
     {
         if (m_rx_count < RS485_BUFFER_SIZE)
         {
-            m_rx_buffer[m_rx_count++] = m_rs485_serial.read();
+            uint8_t incoming_byte = m_rs485_serial.read();
+            m_rx_buffer[m_rx_count++] = incoming_byte;
             m_state = Rs485State::RECEIVING;
+
+            // Provjera kraja paketa nakon svakog primljenog bajta
+            if (incoming_byte == EOT)
+            {
+                if (ValidatePacket(m_rx_buffer, m_rx_count))
+                {
+                    if (m_current_bus_owner != NULL)
+                    {
+                        m_current_bus_owner->ProcessResponse(m_rx_buffer, m_rx_count);
+                    }
+                }
+                // Bez obzira na validaciju, paket je gotov. Resetuj stanje.
+                m_current_bus_owner = NULL;
+                m_state = Rs485State::IDLE;
+                m_rx_count = 0;
+                return; // Izađi iz funkcije čim je paket obrađen
+            }
         }
         else
         {
+            // Buffer overflow, resetuj sve
             m_rx_count = 0; 
             m_state = Rs485State::IDLE;
             return;
-        }
-    }
-
-    // Provjera kraja paketa (aktivna samo u stanju RECEIVING)
-    if (m_state == Rs485State::RECEIVING)
-    {
-        if (ValidatePacket(m_rx_buffer, m_rx_count))
-        {
-            if (m_current_bus_owner != NULL)
-            {
-                m_current_bus_owner->ProcessResponse(m_rx_buffer, m_rx_count);
-            }
-            
-            m_current_bus_owner = NULL; 
-            m_state = Rs485State::IDLE;
-            m_rx_count = 0;
         }
     }
 }

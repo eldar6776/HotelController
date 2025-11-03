@@ -5,8 +5,8 @@
  * @brief   SSI Template za HTTP odgovore (V1 kompatibilnost).
  *
  * @note
- * Replicira ponašanje starog sistema gdje se odgovori umeću u HTML šablon.
- * Tag $<!--#t-->$ se zamjenjuje stvarnim odgovorom servera.
+ * FORMAT ODGOVORA: $MESSAGE$ (sa dollar znakovima)
+ * Kompatibilno sa starim sistemom.
  ******************************************************************************
  */
 
@@ -14,7 +14,7 @@
 
 #include <pgmspace.h>
 
-// Minimalni HTML template sa SSI tagom
+// HTML template sa SSI tagom
 const char LOG_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
@@ -36,6 +36,8 @@ const char LOG_HTML[] PROGMEM = R"rawliteral(
             border-radius: 5px;
             white-space: pre-wrap;
             word-wrap: break-word;
+            font-size: 1.2em;
+            font-weight: bold;
         }
         .timestamp {
             color: #888;
@@ -54,10 +56,17 @@ const char LOG_HTML[] PROGMEM = R"rawliteral(
 </html>
 )rawliteral";
 
-// Pomocna funkcija za SSI replacement
+/**
+ * @brief Zamjenjuje SSI tag sa formatiranim odgovorom ($MESSAGE$)
+ * @param html HTML template string
+ * @param replacement Message (bez dollar znakova)
+ * @return HTML sa zamjenjenim tagom
+ */
 inline String ReplaceSSITag(const String& html, const String& replacement)
 {
     String result = html;
-    result.replace("$<!--#t-->$", replacement);
+    // Format: $MESSAGE$ (dodaj dollar znakove)
+    String formatted = "$" + replacement + "$";
+    result.replace("$<!--#t-->$", formatted);
     return result;
 }

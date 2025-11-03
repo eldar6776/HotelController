@@ -292,24 +292,19 @@ void HttpQueryManager::ProcessResponse(uint8_t* packet, uint16_t length)
 {
     if (m_response_buffer_ptr != NULL)
     {
-        // Kopira se DATA payload (počinje od indeksa 6, uključujući response CMD)
         uint16_t data_length = packet[5];
-        
-        // Za GET_APPL_STAT (cst), odgovor je string
-        if (m_pending_cmd->cmd_id == GET_APPL_STAT && data_length > 1)
-        {
-            memcpy(m_response_buffer_ptr, &packet[7], data_length - 1);
-            m_response_buffer_ptr[data_length - 1] = '\0'; 
-        }
-        // Za većinu ostalih, odgovor je samo ACK
-        else if (packet[0] == ACK) 
-        {
-             strcpy((char*)m_response_buffer_ptr, "ACK");
-        }
-        else
-        {
-            // Neki drugi odgovor, vrati hex
-            sprintf((char*)m_response_buffer_ptr, "Resp CMD: 0x%02X", packet[6]);
+
+        if (packet[0] == ACK) {
+             // Za ACK, možemo vratiti "ACK" ili payload ako postoji
+             if (data_length > 0) {
+                // Kopira se ceo DATA payload (počinje od indeksa 6)
+                memcpy(m_response_buffer_ptr, &packet[6], data_length);
+             } else {
+                strcpy((char*)m_response_buffer_ptr, "ACK");
+             }
+        } else {
+            // Za NACK ili druge odgovore, kopiraj ceo paket radi analize
+            memcpy(m_response_buffer_ptr, packet, length);
         }
     }
     m_query_result = true;

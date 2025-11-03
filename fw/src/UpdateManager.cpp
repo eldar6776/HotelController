@@ -31,6 +31,7 @@
 #define CMD_RT_DWNLD_FWR    0x79U 
 #define CMD_RT_DWNLD_BLDR   0x7AU
 #define CMD_RT_DWNLD_LOGO   0x7BU 
+#define CMD_START_BLDR      0x17U // Definicija komande koja nedostaje
 
 // Globalna konfiguracija (extern)
 extern AppConfig g_appConfig; 
@@ -232,6 +233,12 @@ void UpdateManager::Service()
         return;
     }
 
+    // Specijalni tajmer za pauzu prije slanja START_BLDR
+    if (m_session.state == UpdateState::S_PENDING_RESTART_CMD && (millis() - m_session.timeoutStart < APP_START_DEL))
+    {
+        return;
+    }
+
     if (m_session.state == UpdateState::S_WAITING_FOR_START_ACK ||
         m_session.state == UpdateState::S_WAITING_FOR_DATA_ACK ||
         m_session.state == UpdateState::S_WAITING_FOR_FINISH_ACK)
@@ -249,6 +256,9 @@ void UpdateManager::Service()
         break;
     case UpdateState::S_FINISHING:
         SendFinishRequest(&m_session);
+        break;
+    case UpdateState::S_PENDING_RESTART_CMD:
+        SendRestartCommand(&m_session);
         break;
     case UpdateState::S_PENDING_CLEANUP:
         CleanupSession(&m_session);
@@ -291,7 +301,18 @@ void UpdateManager::ProcessResponse(uint8_t* packet, uint16_t length)
 
             if (m_session.bytesSent >= m_session.fw_size)
             {
-                m_session.state = S_FINISHING;
+                // REPLIKACIJA STAROG PROTOKOLA:
+                // Ako je ovo bio firmware update, ne šaljemo FINISH, već se pripremamo za START_BLDR
+                if (m_session.type == TYPE_FW_RC)
+                {
+                    Serial.println(F("[UpdateManager] Slanje fajla završeno. Priprema za START_BLDR..."));
+                    m_session.state = S_PENDING_RESTART_CMD;
+                    m_session.timeoutStart = millis(); // Pokreni pauzu od APP_START_DEL
+                }
+                else // Za sve ostale tipove (slike, itd.), koristi se standardni FINISH
+                {
+                    m_session.state = S_FINISHING;
+                }
             }
             else
             {
@@ -489,6 +510,44 @@ void UpdateManager::SendFinishRequest(UpdateSession* s)
     {
         s->state = S_IDLE; 
         m_rs485_service->ReleaseBusAccess(this);
+    }
+}
+
+/**
+ * @brief Šalje START_BLDR komandu nakon UPDATE_FWR. Replicira stari protokol.
+ */
+void UpdateManager::SendRestartCommand(UpdateSession* s)
+{
+    Serial.println(F("[UpdateManager] Slanje START_BLDR komande..."));
+
+    uint8_t packet[32]; 
+    uint16_t rsifa = g_appConfig.rs485_iface_addr;
+    uint16_t data_len = 1;
+
+    packet[0] = SOH;
+    packet[1] = (s->clientAddress >> 8);
+    packet[2] = (s->clientAddress & 0xFF);
+    packet[3] = (rsifa >> 8);
+    packet[4] = (rsifa & 0xFF);
+    packet[5] = data_len;
+    
+    packet[6] = CMD_START_BLDR; // Komanda za restart u bootloader
+    
+    uint16_t checksum = CMD_START_BLDR;
+
+    packet[7] = (checksum >> 8);
+    packet[8] = (checksum & 0xFF);
+    packet[9] = EOT;
+    
+    // Ovdje ne očekujemo odgovor, ali Rs485Service će čekati timeout.
+    // Nakon timeout-a, sesija će se završiti.
+    if (m_rs485_service->SendPacket(packet, 10))
+    {
+        s->state = S_COMPLETED_OK; // Smatramo da je uspješno poslato.
+    }
+    else
+    {
+        s->state = S_FAILED; 
     }
 }
 

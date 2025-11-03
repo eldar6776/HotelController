@@ -51,7 +51,7 @@
 #define MAX_PACKET_LENGTH           256    
 #define RS485_BUFFER_SIZE           MAX_PACKET_LENGTH
 #define RS485_TIMEOUT_MS            300
-#define RS485_RESP_TOUT_MS          RS485_TIMEOUT_MS
+#define RS485_RESP_TOUT_MS          45 // Originalna vrednost: RESP_TOUT (45U)
 
 // --- Polling i Logovanje ---
 #define MAX_ADDRESS_LIST_SIZE       500
@@ -62,15 +62,16 @@
 #define LOG_RECORD_SIZE             (LOG_ENTRY_SIZE + 1)
 
 // --- TimeSync / NTP ---
-#define TIME_BROADCAST_INTERVAL_MS  3600000
+#define TIME_BROADCAST_INTERVAL_MS  6789 // Originalna vrednost: RTC_UPD_TIME (6789U)
 #define TIMEZONE_STRING             "CET-1CEST,M3.5.0/2,M10.5.0/3"
 #define NTP_SERVER_1                "hr.pool.ntp.org"
 #define NTP_SERVER_2                "ba.pool.ntp.org"
 
 // --- Update Manager ---
-#define MAX_UPDATE_RETRIES          3
+#define MAX_UPDATE_RETRIES          30 // Originalna vrednost: MAXREP_CNT (30U)
 #define UPDATE_PACKET_TIMEOUT_MS    5000
 #define UPDATE_DATA_CHUNK_SIZE      128
+#define APP_START_DEL               12345 // Originalna vrednost: APP_START_DEL (12345U)
 
 // --- Ping Watchdog ---
 #define PING_INTERVAL_MS            60000

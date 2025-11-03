@@ -541,23 +541,40 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     // --- RC update display image: iuf, iul, ifa, ila ---
     if (request->hasParam("iuf") && request->hasParam("iul") && request->hasParam("ifa") && request->hasParam("ila"))
     {
-        int img_index = request->getParam("ifa")->value().toInt();
-        if (img_index >= 1 && img_index <= 14)
+        // UPOZORENJE: Ova logika je limitirana na JEDNU adresu (iuf),
+        // ali će sada ispravno iterirati kroz sve slike od 'ifa' do 'ila'.
+        uint16_t first_addr = request->getParam("iuf")->value().toInt();
+        // uint16_t last_addr = request->getParam("iul")->value().toInt(); // Trenutno se ne koristi
+        int first_img = request->getParam("ifa")->value().toInt();
+        int last_img = request->getParam("ila")->value().toInt();
+
+        if (first_img < 1 || last_img > 14 || first_img > last_img || first_addr == 0) {
+            SendSSIResponse(request, "ERROR (Invalid image range)");
+            return;
+        }
+
+        // Petlja koja prolazi kroz sve slike za PRVU adresu
+        for (int img_idx = first_img; img_idx <= last_img; ++img_idx)
         {
-            uint8_t updateCmd = CMD_IMG_RC_START + img_index - 1;
-            if (StartUpdateSession(request, updateCmd, request->getParam("iuf")->value(), request->getParam("iul")->value()))
-            {
-                SendSSIResponse(request, "OK (Update started)");
+            // Sačekaj da se prethodna sesija završi
+            while (m_update_manager->m_session.state != S_IDLE) {
+                delay(100); // Ne blokiraj sistem potpuno
             }
-            else
+
+            Serial.printf("[HttpServer] Pokretanje update-a slike %d za adresu %d\n", img_idx, first_addr);
+            uint8_t updateCmd = CMD_IMG_RC_START + img_idx - 1;
+            
+            // Pokreni sesiju za jednu adresu i jednu sliku
+            if (!m_update_manager->StartSession(first_addr, updateCmd))
             {
-                SendSSIResponse(request, "ERROR");
+                // Ako sesija ne može ni da počne (npr. fajl ne postoji), prekini sve.
+                String errorMsg = "ERROR (Failed to start session for image " + String(img_idx) + ")";
+                SendSSIResponse(request, errorMsg);
+                return; // Prekini ako jedna sesija ne uspe
             }
         }
-        else
-        {
-            SendSSIResponse(request, "ERROR (Invalid image index)");
-        }
+
+        SendSSIResponse(request, "OK (Image update sequence started)");
         return;
     }
 

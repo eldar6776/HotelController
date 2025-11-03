@@ -25,6 +25,7 @@
 
 #include "Rs485Service.h"
 #include "SdCardManager.h"
+#include "ProjectConfig.h" // DODATO: Da bi APP_START_DEL bio dostupan
 #include <SD.h>
 
 // Stanja iz 'update_manager.c'
@@ -37,6 +38,7 @@ enum UpdateState
     S_WAITING_FOR_DATA_ACK,
     S_FINISHING,
     S_WAITING_FOR_FINISH_ACK,
+    S_PENDING_RESTART_CMD, // NOVO: Stanje za slanje START_BLDR nakon UPDATE_FWR
     S_COMPLETED_OK,
     S_FAILED,
     S_PENDING_CLEANUP
@@ -109,6 +111,7 @@ private:
     void SendStartRequest(UpdateSession* s);
     void SendDataPacket(UpdateSession* s);
     void SendFinishRequest(UpdateSession* s);
+    void SendRestartCommand(UpdateSession* s); // DODATO: Deklaracija funkcije
     void CleanupSession(UpdateSession* s);
     
     // REFAKTORISANA: Određuje ime fajla, otvara ga i čita metadatu

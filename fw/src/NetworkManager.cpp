@@ -132,15 +132,13 @@ void NetworkManager::InitializeETH()
 {
     Serial.println(F("[NetworkManager] Pokusaj konekcije preko Etherneta..."));
 
-    ETH.setHostname("HC-ESP32");
+    ETH.setHostname(g_appConfig.mdns_name);
     
     IPAddress localIP(g_appConfig.ip_address);
     IPAddress gateway(g_appConfig.gateway);
     IPAddress subnet(g_appConfig.subnet_mask);
     
-    ETH.begin(ETH_PHY_ADDR, ETH_POWER_PIN, ETH_PHY_TYPE, ETH_CLK_MODE);
-    
-    ETH.config(localIP, gateway, subnet);
+    ETH.begin(ETH_PHY_ADDR, ETH_POWER_PIN, ETH_MDC_PIN, ETH_MDIO_PIN, ETH_PHY_TYPE, ETH_CLK_MODE);
 
     delay(500);
 }

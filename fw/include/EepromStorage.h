@@ -27,7 +27,7 @@ struct AppConfig
     uint16_t rs485_group_addr;
     uint16_t rs485_bcast_addr;
     uint16_t system_id;
-    // ... ostale postavke
+    char mdns_name[32];
 };
 
 // Definicija strukture za log (16 bajtova)
@@ -72,7 +72,7 @@ public:
 
 private:
     void LoggerInit(); // Skenira EEPROM da pronadje head/tail
-
+    void LoadDefaultConfig();
     // Privatne funkcije za I2C komunikaciju sa 24C1024 (16-bitne adrese)
     bool WriteBytes(uint16_t address, const uint8_t* data, uint16_t length);
     bool ReadBytes(uint16_t address, uint8_t* data, uint16_t length);

@@ -54,7 +54,7 @@ void setup()
     
     // Rjesava gresku: OVDJE JE BILA LINIJA KOJA JE KORISTILA g_spiFlashStorage
     // Ispravno: Inicijalizacija SdCardManager-a
-    g_sdCardManager.Initialize(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, SPI_FLASH_CS_PIN); 
+    g_sdCardManager.Initialize(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, SPI_FLASH_CS_PIN);
 
     g_eepromStorage.Initialize(I2C_SDA_PIN, I2C_SCL_PIN);
 

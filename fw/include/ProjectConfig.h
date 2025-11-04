@@ -3,44 +3,49 @@
  * @file    ProjectConfig.h
  * @author  Gemini & [Vase Ime]
  * @brief   Centralna konfiguracija za Hotel Controller ESP32
- * * @note    Pinout ažuriran na v11. Strategija skladištenja ostaje uSD kartica.
+ * @note    AŽURIRANO: Migracija na LILYGO T-Internet-POE (prema šemi)
  ******************************************************************************
  */
 
 #pragma once
 
 //=============================================================================
-// 1. HARDVERSKA MAPA PINOVA (v11 - Preuzeto iz README.md)
+// 1. HARDVERSKA MAPA PINOVA (LILYGO T-Internet-POE)
 //=============================================================================
 
-// --- RS485 INTERFEJS (Serial2) ---
-#define RS485_RX_PIN        5    //
-#define RS485_TX_PIN        17   //
-#define RS485_DE_PIN        33   //
+// --- RS485 INTERFEJS (Serial2) - Pinovi na P0 konektoru ---
+#define RS485_RX_PIN        16  // (P0 Pin 12: IO16 - Hardverski UART2_RX)
+#define RS485_TX_PIN        33  // (P0 Pin 10: IO33 - Slobodan I/O, mapiran na UART2_TX)
+#define RS485_DE_PIN        32  // (P0 Pin 11: IO32 - Slobodan I/O)
 
-// --- I2C INTERFEJS (EEPROM) ---
-#define I2C_SDA_PIN         14   //
-#define I2C_SCL_PIN         15   //
+// --- I2C INTERFEJS (EEPROM) - Pinovi na P0 konektoru ---
+#define I2C_SDA_PIN         15  // (P0 Pin 7: GPIO15/MOSI - Hardverski I2C_SDA)
+#define I2C_SCL_PIN         14  // (P0 Pin 5: GPIO14/CLK - Hardverski I2C_SCL)
 #define EEPROM_I2C_ADDR     0x50
 
-// --- SPI INTERFEJS (uSD kartica - Koristeći v11 pinove za Flash) ---
-#define SPI_SCK_PIN         12   //
-#define SPI_MOSI_PIN        4    //
-#define SPI_MISO_PIN        36   //
-#define SPI_FLASH_CS_PIN    32   // (Koristi se za CS pin uSD kartice)
+// --- SPI INTERFEJS (uSD kartica) - Fiksno na ploči ---
+#define SPI_SCK_PIN         14  // (Interno J1)
+#define SPI_MISO_PIN        2   // (Interno J1)
+#define SPI_MOSI_PIN        15  // (Interno J1)
+#define SPI_FLASH_CS_PIN    13  // (Interno J1 - CS pin uSD kartice)
 
-// --- Ethernet (ETH) ---
-#define ETH_MDC_PIN         23
-#define ETH_MDIO_PIN        12   // Konflikt sa SPI_SCK_PIN (Upravlja se softverski)
-#define ETH_POWER_PIN       16
-#define ETH_PHY_ADDR        1
+// --- Ethernet (ETH) - Fiksno na ploči ---
+#define ETH_MDC_PIN         23  // (Interno U6)
+#define ETH_MDIO_PIN        18  // (Interno U6)
+#define ETH_POWER_PIN       -1  // NIJE POTREBAN (Riješeno POE)
+#define ETH_RESET_PIN       5   // (Interno U6)
+#define ETH_PHY_ADDR        0   // (T-Internet-POE koristi ADDR 0)
 #define ETH_PHY_TYPE        ETH_PHY_LAN8720
-#define ETH_CLK_MODE        ETH_CLOCK_GPIO0_IN //
+#define ETH_CLK_MODE        ETH_CLOCK_GPIO0_IN // (Interno U1)
 
 // --- OSTALO ---
-#define STATUS_LED_PIN      2    //
-#define WIFI_RST_BTN_PIN    39   //
+#define STATUS_LED_PIN      2   // (Konflikt sa uSD MISO, ali koristimo MISO) - Ako LED treba, mora se premjestiti.
+#define WIFI_RST_BTN_PIN    32  // (Sada se koristi za I2C_SCL) - Moramo ga premjestiti ako je potreban.
 #define SERIAL_DEBUG_BAUDRATE 115200
+
+// --- DWIN (UART0) - Pinovi na P1 konektoru ---
+#define DWIN_RX_PIN         3   // (P1 Pin 1: UARX)
+#define DWIN_TX_PIN         1   // (P1 Pin 2: UATX)
 
 //=============================================================================
 // 2. GLOBALNE KONSTANTE SISTEMA (Nepromijenjeno)
@@ -107,10 +112,36 @@
 #define PATH_UPDATE_CFG     "/UPDATE.CFG"
 
 //=============================================================================
-// 5. NAPOMENE ZA RAZVOJ (Ažurirano)
+// 5. DEFAULTNE SISTEMSKE VRIJEDNOSTI (Preuzeto iz common.h)
 //=============================================================================
 //
-// - AŽURIRANO: Mapa pinova (v11).
-// - ZADRŽANO: Strategija skladištenja na uSD kartici (FAT32).
-// - UPOZORENJE: GPIO12 (ETH_MDIO) i GPIO12 (SPI_SCK) su u konfliktu.
-//
+
+// --- Mreža i mDNS ---
+#define DEFAULT_MDNS_NAME       "HOTEL_CTRL"    //
+#define DEFAULT_IP_ADDR0        192             //
+#define DEFAULT_IP_ADDR1        168             //
+#define DEFAULT_IP_ADDR2        0               //
+#define DEFAULT_IP_ADDR3        199             //
+#define DEFAULT_SUBNET_ADDR0    255             //
+#define DEFAULT_SUBNET_ADDR1    255             //
+#define DEFAULT_SUBNET_ADDR2    255             //
+#define DEFAULT_SUBNET_ADDR3    0               //
+#define DEFAULT_GW_ADDR0        192             //
+#define DEFAULT_GW_ADDR1        168             //
+#define DEFAULT_GW_ADDR2        0               //
+#define DEFAULT_GW_ADDR3        1               //
+
+// --- RS485 Adrese ---
+#define DEFAULT_RS485_BCAST_ADDR    39321       // (DEF_RSBRA)
+#define DEFAULT_RS485_GROUP_ADDR    26486       // (DEF_RC_RSGRA)
+#define DEFAULT_RS485_IFACE_ADDR    5           // (FST_HC_RSIFA)
+
+// --- Sistem ---
+#define DEFAULT_SYSTEM_ID           43962       // (DEF_SYSID)
+
+
+//=============================================================================
+// 6. NAPOMENE ZA RAZVOJ (Stari Obrisani Makroi)
+//=============================================================================
+
+// ... (ostatak fajla)

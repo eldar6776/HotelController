@@ -23,19 +23,65 @@ EepromStorage::EepromStorage() :
     // Konstruktor
 }
 
+// ============================================================================
+// --- DODANA FUNKCIJA ZA UČITAVANJE DEFAULTNIH VRIJEDNOSTI ---
+// ============================================================================
+void EepromStorage::LoadDefaultConfig()
+{
+    Serial.println(F("[EepromStorage] UPOZORENJE: EEPROM je prazan ili neispravan. Učitavam podrazumijevane vrijednosti..."));
+
+    // 1. Mrežne postavke
+    g_appConfig.ip_address = IPAddress(DEFAULT_IP_ADDR0, DEFAULT_IP_ADDR1, DEFAULT_IP_ADDR2, DEFAULT_IP_ADDR3);
+    g_appConfig.subnet_mask = IPAddress(DEFAULT_SUBNET_ADDR0, DEFAULT_SUBNET_ADDR1, DEFAULT_SUBNET_ADDR2, DEFAULT_SUBNET_ADDR3);
+    g_appConfig.gateway = IPAddress(DEFAULT_GW_ADDR0, DEFAULT_GW_ADDR1, DEFAULT_GW_ADDR2, DEFAULT_GW_ADDR3);
+
+    // 2. RS485 Adrese
+    g_appConfig.rs485_iface_addr = DEFAULT_RS485_IFACE_ADDR;
+    g_appConfig.rs485_group_addr = DEFAULT_RS485_GROUP_ADDR;
+    g_appConfig.rs485_bcast_addr = DEFAULT_RS485_BCAST_ADDR;
+
+    // 3. Sistem
+    g_appConfig.system_id = DEFAULT_SYSTEM_ID;
+    
+    // 4. mDNS Ime (kopiranje stringa)
+    memset(g_appConfig.mdns_name, 0, sizeof(g_appConfig.mdns_name));
+    strncpy(g_appConfig.mdns_name, DEFAULT_MDNS_NAME, sizeof(g_appConfig.mdns_name) - 1);
+
+    // 5. Snimi nove (defaultne) vrijednosti u EEPROM
+    if (WriteConfig(&g_appConfig))
+    {
+        Serial.println(F("[EepromStorage] Podrazumijevane vrijednosti uspješno snimljene u EEPROM."));
+    }
+    else
+    {
+        Serial.println(F("[EepromStorage] GRESKA: Snimanje podrazumijevanih vrijednosti nije uspjelo!"));
+    }
+}
+
 void EepromStorage::Initialize(int8_t sda_pin, int8_t scl_pin)
 {
     Serial.printf("[EepromStorage] Inicijalizacija I2C na SDA=%d, SCL=%d\r\n", sda_pin, scl_pin);
     Wire.begin(sda_pin, scl_pin);
     
     // Učitaj globalnu konfiguraciju
-    if (ReadConfig(&g_appConfig))
+    if (!ReadConfig(&g_appConfig))
     {
-        Serial.printf("[EepromStorage] Konfiguracija ucitana. RS485 Adresa: 0x%X\r\n", g_appConfig.rs485_iface_addr);
+        // Greška pri čitanju I2C (npr. hardverski kvar)
+        Serial.println(F("[EepromStorage] GRESKA: Nije moguce pročitati I2C EEPROM."));
+        LoadDefaultConfig(); // Učitaj i snimi defaultne
     }
     else
     {
-        Serial.println(F("[EepromStorage] GRESKA: Nije moguce ucitati konfiguraciju."));
+        // Provjeri da li je EEPROM prazan (0xFFFF) ili obrisan (0x0000)
+        // Koristimo rs485_iface_addr kao "magic number" za provjeru
+        if (g_appConfig.rs485_iface_addr == 0xFFFF || g_appConfig.rs485_iface_addr == 0x0000)
+        {
+            LoadDefaultConfig(); // Učitaj i snimi defaultne
+        }
+        else
+        {
+            Serial.printf("[EepromStorage] Konfiguracija ucitana. RS485 Adresa: 0x%X\r\n", g_appConfig.rs485_iface_addr);
+        }
     }
 
     Serial.println(F("[EepromStorage] Inicijalizacija Logera...\r\n"));

@@ -20,17 +20,25 @@
 #include "EepromStorage.h" // Za AppConfig
 
 // Forward deklaracija za module koje pozivamo (iz main.cpp)
-class VirtualGpio;
+class HttpServer;
 
 class NetworkManager
 {
 public:
+    // NOVO: Dajemo pristup HttpServer-u
+    void SetHttpServer(HttpServer* httpServer);
+
     NetworkManager();
     void Initialize();
+    void StartTask(); // NOVO: Metoda za pokretanje zadatka
     void Loop();
     bool IsNetworkConnected();
 
 private:
+    // Metode za zadatak
+    static void TaskWrapper(void* pvParameters);
+    void RunTask();
+
     void InitializeETH();
     void InitializeWiFi();
     void InitializeNTP();
@@ -44,7 +52,9 @@ private:
     bool m_eth_connected;
     bool m_wifi_connected;
     unsigned long m_last_ping_time;
-    int m_ping_failures; // Dodano za praćenje broja neuspjeha (kao u main.cpp)
+    int m_ping_failures;
+    TaskHandle_t m_task_handle; // NOVO: Handle za zadatak
+    HttpServer* m_http_server;  // NOVO: Pokazivač na HttpServer
 };
 
 #endif // NETWORK_MANAGER_H

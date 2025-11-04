@@ -43,6 +43,7 @@ public:
         EepromStorage* pEepromStorage,
         SdCardManager* pSdCardManager  // CHANGED
     );
+    void Start(); // NOVO: Metoda za pokretanje servera
 
 private:
     void HandleRoot(AsyncWebServerRequest *request); // Servira frontend

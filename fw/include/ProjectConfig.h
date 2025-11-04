@@ -16,31 +16,37 @@
 // --- RS485 INTERFEJS (Serial2) - Pinovi na P0 konektoru ---
 #define RS485_RX_PIN        16  // (P0 Pin 12: IO16 - Hardverski UART2_RX)
 #define RS485_TX_PIN        33  // (P0 Pin 10: IO33 - Slobodan I/O, mapiran na UART2_TX)
-#define RS485_DE_PIN        32  // (P0 Pin 11: IO32 - Slobodan I/O)
+// GPIO12 je "strapping pin", ali je siguran za DE jer je LOW u mirovanju
+#define RS485_DE_PIN        12  // (P0 Pin 9: IO12)
 
 // --- I2C INTERFEJS (EEPROM) - Pinovi na P0 konektoru ---
-#define I2C_SDA_PIN         15  // (P0 Pin 7: GPIO15/MOSI - Hardverski I2C_SDA)
-#define I2C_SCL_PIN         14  // (P0 Pin 5: GPIO14/CLK - Hardverski I2C_SCL)
+// PREMJEŠTENO: Koriste se slobodni I/O pinovi koji nisu "strapping" ili input-only
+#define I2C_SDA_PIN         4   // (P0 Pin 8: IO4)
+#define I2C_SCL_PIN         32  // (P0 Pin 11: IO32)
 #define EEPROM_I2C_ADDR     0x50
 
 // --- SPI INTERFEJS (uSD kartica) - Fiksno na ploči ---
-#define SPI_SCK_PIN         14  // (Interno J1)
-#define SPI_MISO_PIN        2   // (Interno J1)
-#define SPI_MOSI_PIN        15  // (Interno J1)
+// OVI PINOVI SU INTERNO KORIŠTENI (P0 Pin 5, 6, 7) I NE SMIJU SE KORISTITI ZA DRUGE PERIFERIJE
+#define SPI_SCK_PIN         14  // (Pin 5: GPIO14/CLK)
+#define SPI_MISO_PIN        2   // (Interno J1 / P0 Pin 6)
+#define SPI_MOSI_PIN        15  // (Interno J1 / P0 Pin 7)
 #define SPI_FLASH_CS_PIN    13  // (Interno J1 - CS pin uSD kartice)
 
 // --- Ethernet (ETH) - Fiksno na ploči ---
 #define ETH_MDC_PIN         23  // (Interno U6)
 #define ETH_MDIO_PIN        18  // (Interno U6)
-#define ETH_POWER_PIN       -1  // NIJE POTREBAN (Riješeno POE)
+#define ETH_POWER_PIN       -1  // NIJE POTREBAN (Riješeno POE), ali je neophodan za potpis funkcije
 #define ETH_RESET_PIN       5   // (Interno U6)
-#define ETH_PHY_ADDR        0   // (T-Internet-POE koristi ADDR 0)
 #define ETH_PHY_TYPE        ETH_PHY_LAN8720
-#define ETH_CLK_MODE        ETH_CLOCK_GPIO0_IN // (Interno U1)
+#ifdef ETH_CLK_MODE
+#undef ETH_CLK_MODE
+#endif
+#define ETH_CLK_MODE        ETH_CLOCK_GPIO17_OUT // ISPRAVKA: LILYGO ploča zahtijeva da ESP32 generiše sat (Uklonjeno upozorenje)
 
 // --- OSTALO ---
-#define STATUS_LED_PIN      2   // (Konflikt sa uSD MISO, ali koristimo MISO) - Ako LED treba, mora se premjestiti.
-#define WIFI_RST_BTN_PIN    32  // (Sada se koristi za I2C_SCL) - Moramo ga premjestiti ako je potreban.
+// STATUS_LED_PIN se ne može koristiti jer su svi preostali pinovi zauzeti ili nepouzdani.
+#define STATUS_LED_PIN      -1  // Onemogućeno
+#define WIFI_RST_BTN_PIN    35  // (P0 Pin 13: IO35 - Samo ULAZ)
 #define SERIAL_DEBUG_BAUDRATE 115200
 
 // --- DWIN (UART0) - Pinovi na P1 konektoru ---

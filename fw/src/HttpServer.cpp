@@ -18,7 +18,6 @@
 #include "UpdateManager.h"
 #include "EepromStorage.h"
 #include "SdCardManager.h"
-#include "VirtualGpio.h"
 #include "log_html.h" // SSI Template
 #include <cstring>
 #include <time.h>
@@ -26,7 +25,6 @@
 
 // Globalni objekti (extern)
 extern AppConfig g_appConfig;
-extern VirtualGpio g_virtualGpio;
 extern NetworkManager g_networkManager; // Potrebno za Eth/RS485 restart
 
 // CMD-ovi za Update (iz httpd_cgi_ssi.c)
@@ -102,6 +100,12 @@ void HttpServer::Initialize(
     m_server.onNotFound([this](AsyncWebServerRequest *request)
                         { this->HandleNotFound(request); });
 
+    // NE POKREĆEMO SERVER ODMAH
+    // m_server.begin(); 
+}
+
+void HttpServer::Start()
+{
     m_server.begin();
     Serial.println(F("[HttpServer] Server pokrenut."));
 }
@@ -264,18 +268,6 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     // ========================================================================
     // --- LOKALNE KOMANDE (Ne idu na RS485 bus) ---
     // ========================================================================
-
-    // --- HC led control: HCled ---
-    if (request->hasParam("HCled"))
-    {
-        int led_state = request->getParam("HCled")->value().toInt();
-        if (led_state >= 0 && led_state <= 3)
-        {
-            g_virtualGpio.SetStatusLed((LedState)led_state);
-            SendSSIResponse(request, "OK");
-            return;
-        }
-    }
 
     // --- HC set IP addresses: ipa, snm, gwa ---
     if (request->hasParam("ipa") && request->hasParam("snm") && request->hasParam("gwa"))

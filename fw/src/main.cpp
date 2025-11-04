@@ -16,7 +16,6 @@
 #include "SdCardManager.h"   // CHANGED: Ukljucen SdCardManager
 #include "Rs485Service.h"      
 #include "HttpServer.h"        
-#include "VirtualGpio.h"       
 #include "HttpQueryManager.h"
 #include "LogPullManager.h"
 #include "TimeSync.h"
@@ -29,7 +28,6 @@ EepromStorage g_eepromStorage;
 SdCardManager g_sdCardManager; // Ispravno: Koristimo SdCardManager
 Rs485Service g_rs485Service;
 HttpServer g_httpServer;
-VirtualGpio g_virtualGpio;
 HttpQueryManager g_httpQueryManager;
 LogPullManager g_logPullManager;
 TimeSync g_timeSync;
@@ -50,15 +48,18 @@ void setup()
     // --- FAZA 2: Inicijalizacija HW Drajvera ---
     Serial.println(F("[setup] Inicijalizacija HW Drajvera...\r\n"));
 
-    g_virtualGpio.Initialize(); 
-    
     // Rjesava gresku: OVDJE JE BILA LINIJA KOJA JE KORISTILA g_spiFlashStorage
     // Ispravno: Inicijalizacija SdCardManager-a
     g_sdCardManager.Initialize(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, SPI_FLASH_CS_PIN);
 
     g_eepromStorage.Initialize(I2C_SDA_PIN, I2C_SCL_PIN);
 
-    g_networkManager.Initialize(); // ETH/WiFi/NTP
+    // ISPRAVKA: Inicijalizacija se premješta u poseban zadatak
+    g_networkManager.Initialize(); // Inicijalizuje samo event handlere
+    g_networkManager.StartTask();  // Pokreće zadatak koji će inicijalizovati ETH/WiFi
+
+    // NOVO: Proslijedi pokazivač na HTTP server u NetworkManager
+    g_networkManager.SetHttpServer(&g_httpServer);
 
     // --- FAZA 3: Inicijalizacija Sub-Modula ---
     Serial.println(F("[setup] Inicijalizacija Sub-Modula...\r\n"));
@@ -71,7 +72,7 @@ void setup()
     g_updateManager.Initialize(&g_rs485Service, &g_sdCardManager); 
     g_timeSync.Initialize(&g_rs485Service);
 
-    Serial.println(F("[setup] Inicijalizacija HTTP Servera..."));
+    Serial.println(F("[setup] Priprema HTTP Servera (ne pokreće se još)..."));
     
     // Ispravno: Proslijedjen SdCardManager (cetvrti argument)
     g_httpServer.Initialize(
@@ -101,8 +102,6 @@ void setup()
 void loop() 
 {
     // Glavna petlja: koristimo samo za ne-blokirajuce Loop funkcije
-    g_virtualGpio.Loop();
-    g_networkManager.Loop();
-    // Ostali menadzeri su u FreeRTOS zadacima
+    g_networkManager.Loop(); // Provjerava reset dugme
     delay(1); 
 }

@@ -7,6 +7,7 @@
  */
 
 #include "SdCardManager.h"
+#include "DebugConfig.h"
 
 SdCardManager::SdCardManager() :
     m_card_mounted(false),
@@ -17,7 +18,8 @@ SdCardManager::SdCardManager() :
 
 bool SdCardManager::Initialize(int8_t sck_pin, int8_t miso_pin, int8_t mosi_pin, int8_t cs_pin)
 {
-    Serial.println(F("[SdCardManager] Inicijalizacija..."));
+    LOG_DEBUG(5, "[SdCard] Entering Initialize()...\n");
+    LOG_DEBUG(3, "[SdCard] Inicijalizacija SPI: SCK=%d, MISO=%d, MOSI=%d, CS=%d\n", sck_pin, miso_pin, mosi_pin, cs_pin);
     
     m_cs_pin = cs_pin;
     
@@ -25,16 +27,16 @@ bool SdCardManager::Initialize(int8_t sck_pin, int8_t miso_pin, int8_t mosi_pin,
     SPI.begin(sck_pin, miso_pin, mosi_pin, cs_pin);
     
     // Pokušaj montiranje kartice sa većim timeout-om (5 sekundi)
-    Serial.println(F("[SdCardManager] Pokušaj montiranja uSD kartice..."));
+    LOG_DEBUG(3, "[SdCard] Pokušaj montiranja uSD kartice...\n");
     
     // Pokušaj sa standardnom frekvencijom (4MHz je safe default)
     if (!SD.begin(cs_pin, SPI, 4000000))
     {
-        Serial.println(F("[SdCardManager] GREŠKA: Montiranje kartice neuspješno!"));
-        Serial.println(F("[SdCardManager] Provjerite:"));
-        Serial.println(F("  - Da li je kartica umetnuta?"));
-        Serial.println(F("  - Da li je kartica formatirana (FAT32)?"));
-        Serial.println(F("  - Da li su SPI pinovi ispravno povezani?"));
+        LOG_DEBUG(1, "[SdCard] GRESKA: Montiranje kartice neuspješno!\n");
+        LOG_DEBUG(1, "[SdCard] Provjerite:\n");
+        LOG_DEBUG(1, "[SdCard]   - Da li je kartica umetnuta?\n");
+        LOG_DEBUG(1, "[SdCard]   - Da li je kartica formatirana (FAT32)?\n");
+        LOG_DEBUG(1, "[SdCard]   - Da li su SPI pinovi ispravno povezani?\n");
         m_card_mounted = false;
         return false;
     }
@@ -42,33 +44,33 @@ bool SdCardManager::Initialize(int8_t sck_pin, int8_t miso_pin, int8_t mosi_pin,
     m_card_mounted = true;
     
     // Ispis informacija o kartici
-    uint8_t cardType = SD.cardType();
-    Serial.print(F("[SdCardManager] Tip kartice: "));
+    uint8_t cardType = SD.cardType();    
     
     switch (cardType)
     {
         case CARD_MMC:
-            Serial.println(F("MMC"));
+            LOG_DEBUG(3, "[SdCard] Tip kartice: MMC\n");
             break;
         case CARD_SD:
-            Serial.println(F("SDSC"));
+            LOG_DEBUG(3, "[SdCard] Tip kartice: SDSC\n");
             break;
         case CARD_SDHC:
-            Serial.println(F("SDHC"));
+            LOG_DEBUG(3, "[SdCard] Tip kartice: SDHC\n");
             break;
         default:
-            Serial.println(F("UNKNOWN"));
+            LOG_DEBUG(3, "[SdCard] Tip kartice: UNKNOWN\n");
             break;
     }
     
     uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-    Serial.printf("[SdCardManager] Veličina kartice: %llu MB\n", cardSize);
+    LOG_DEBUG(3, "[SdCard] Veličina kartice: %llu MB\n", cardSize);
     
     uint64_t usedBytes = SD.usedBytes() / (1024 * 1024);
     uint64_t totalBytes = SD.totalBytes() / (1024 * 1024);
-    Serial.printf("[SdCardManager] Iskorišteno: %llu MB / %llu MB\n", usedBytes, totalBytes);
+    LOG_DEBUG(3, "[SdCard] Iskorišteno: %llu MB / %llu MB\n", usedBytes, totalBytes);
     
-    Serial.println(F("[SdCardManager] Inicijalizacija uspješna!"));
+    LOG_DEBUG(3, "[SdCard] Inicijalizacija uspješna!\n");
+    LOG_DEBUG(5, "[SdCard] Exiting Initialize().\n");
     return true;
 }
 
@@ -81,14 +83,15 @@ String SdCardManager::ReadTextFile(const char* path)
 {
     if (!m_card_mounted)
     {
-        Serial.println(F("[SdCardManager] Kartica nije montirana!"));
+        LOG_DEBUG(1, "[SdCard] GRESKA: Pokušaj čitanja fajla '%s' dok kartica nije montirana.\n", path);
         return String();
     }
     
+    LOG_DEBUG(4, "[SdCard] Čitanje tekstualnog fajla: %s\n", path);
     File file = SD.open(path, FILE_READ);
     if (!file)
     {
-        Serial.printf("[SdCardManager] Fajl '%s' ne postoji.\n", path);
+        LOG_DEBUG(2, "[SdCard] UPOZORENJE: Fajl '%s' ne postoji.\n", path);
         return String();
     }
     
@@ -102,7 +105,7 @@ String SdCardManager::ReadTextFile(const char* path)
     
     file.close();
     
-    Serial.printf("[SdCardManager] Pročitano %d bajtova iz '%s'\n", content.length(), path);
+    LOG_DEBUG(3, "[SdCard] Pročitano %d bajtova iz '%s'\n", content.length(), path);
     return content;
 }
 
@@ -110,7 +113,7 @@ File SdCardManager::OpenFile(const char* path, const char* mode) // Prihvata con
 {
     if (!m_card_mounted)
     {
-        Serial.println(F("[SdCardManager] Kartica nije montirana!"));
+        LOG_DEBUG(1, "[SdCard] GRESKA: Pokušaj otvaranja fajla '%s' dok kartica nije montirana.\n", path);
         return File();
     }
     
@@ -119,7 +122,7 @@ File SdCardManager::OpenFile(const char* path, const char* mode) // Prihvata con
     
     if (!file)
     {
-        Serial.printf("[SdCardManager] Greška pri otvaranju fajla '%s'\n", path);
+        LOG_DEBUG(1, "[SdCard] GRESKA pri otvaranju fajla '%s' u modu '%s'.\n", path, mode);
     }
     
     return file;
@@ -129,7 +132,7 @@ File SdCardManager::CreateFile(const char* path)
 {
     if (!m_card_mounted)
     {
-        Serial.println(F("[SdCardManager] Kartica nije montirana!"));
+        LOG_DEBUG(1, "[SdCard] GRESKA: Pokušaj kreiranja fajla '%s' dok kartica nije montirana.\n", path);
         return File();
     }
     
@@ -143,11 +146,11 @@ File SdCardManager::CreateFile(const char* path)
     
     if (!file)
     {
-        Serial.printf("[SdCardManager] Greška pri kreiranju fajla '%s'\n", path);
+        LOG_DEBUG(1, "[SdCard] GRESKA pri kreiranju fajla '%s'.\n", path);
     }
     else
     {
-        Serial.printf("[SdCardManager] Kreiran novi fajl '%s'\n", path);
+        LOG_DEBUG(3, "[SdCard] Kreiran novi fajl '%s'.\n", path);
     }
     
     return file;
@@ -235,24 +238,24 @@ bool SdCardManager::DeleteFile(const char* path)
 {
     if (!m_card_mounted)
     {
-        Serial.println(F("[SdCardManager] Kartica nije montirana!"));
+        LOG_DEBUG(1, "[SdCard] GRESKA: Pokušaj brisanja fajla '%s' dok kartica nije montirana.\n", path);
         return false;
     }
     
     if (!SD.exists(path))
     {
-        Serial.printf("[SdCardManager] Fajl '%s' ne postoji.\n", path);
+        LOG_DEBUG(2, "[SdCard] UPOZORENJE: Pokušaj brisanja fajla '%s' koji ne postoji.\n", path);
         return false;
     }
     
     if (SD.remove(path))
     {
-        Serial.printf("[SdCardManager] Fajl '%s' uspješno obrisan.\n", path);
+        LOG_DEBUG(3, "[SdCard] Fajl '%s' uspješno obrisan.\n", path);
         return true;
     }
     else
     {
-        Serial.printf("[SdCardManager] Greška pri brisanju fajla '%s'\n", path);
+        LOG_DEBUG(1, "[SdCard] GRESKA pri brisanju fajla '%s'.\n", path);
         return false;
     }
 }

@@ -15,9 +15,11 @@
 
 // --- RS485 INTERFEJS (Serial2) - Pinovi na P0 konektoru ---
 #define RS485_RX_PIN        16  // (P0 Pin 12: IO16 - Hardverski UART2_RX)
-#define RS485_TX_PIN        33  // (P0 Pin 10: IO33 - Slobodan I/O, mapiran na UART2_TX)
-// GPIO12 je "strapping pin", ali je siguran za DE jer je LOW u mirovanju
-#define RS485_DE_PIN        12  // (P0 Pin 9: IO12)
+// #define RS485_TX_PIN        33  // (P0 Pin 10: IO33)
+// #define RS485_DE_PIN        12  // (P0 Pin 9: IO12) // PROBLEM: GPIO12 je "strapping pin" i ometa upload!
+
+#define RS485_TX_PIN        12  // (P0 Pin 9: IO12) - Koristimo GPIO12 za TX.
+#define RS485_DE_PIN        33  // (P0 Pin 10: IO33) - Koristimo GPIO33 za DE, jer nema "strapping" funkciju.
 
 // --- I2C INTERFEJS (EEPROM) - Pinovi na P0 konektoru ---
 // PREMJEŠTENO: Koriste se slobodni I/O pinovi koji nisu "strapping" ili input-only
@@ -62,6 +64,7 @@
 #define MAX_PACKET_LENGTH           256    
 #define RS485_BUFFER_SIZE           MAX_PACKET_LENGTH
 #define RS485_TIMEOUT_MS            300
+#define MAX_RS485_RETRIES           3    // NOVO: Maksimalan broj ponovnih slanja u slučaju timeout-a
 #define RS485_RESP_TOUT_MS          45 // Originalna vrednost: RESP_TOUT (45U)
 
 // --- Polling i Logovanje ---

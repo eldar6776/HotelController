@@ -12,6 +12,7 @@
  * - File Browser (list/delete)
  ******************************************************************************
  */
+#include "DebugConfig.h"
 #include "NetworkManager.h"
 #include "HttpServer.h"
 #include "HttpQueryManager.h"
@@ -123,10 +124,13 @@ void HttpServer::HandleRoot(AsyncWebServerRequest *request)
  */
 void HttpServer::SendSSIResponse(AsyncWebServerRequest *request, const String &message)
 {
+    // =================================================================================
+    // KLJUČNA ISPRAVKA: Koristimo ispravnu logiku za zamjenu SSI taga.
+    // Originalni HTML je "$<!--#t-->$". Mijenjamo "<!--#t-->" sa porukom.
+    // Rezultat će biti "$MESSAGE$".
+    // =================================================================================
     String html = String(FPSTR(LOG_HTML));
-    // Koristimo logiku $MESSAGE$
-    String formatted = "$" + message + "$";
-    html.replace("$$", formatted);
+    html.replace("<!--#t-->", message);
     request->send(200, "text/html", html);
 }
 
@@ -277,7 +281,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         g_appConfig.gateway = IpStringToUint(request->getParam("gwa")->value());
         if (m_eeprom_storage->WriteConfig(&g_appConfig))
         {
-            SendSSIResponse(request, "OK (Restart required)");
+            SendSSIResponse(request, "OK");
         }
         else
         {
@@ -379,26 +383,35 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
 
         if (!m_sd_card_manager->IsCardMounted())
         {
-            SendSSIResponse(request, "ERROR (Card not mounted)");
+            SendSSIResponse(request, "ERROR");
             return;
         }
 
         String content = m_sd_card_manager->ReadTextFile(PATH_CTRL_ADD_LIST);
         if (content.length() == 0)
         {
-            SendSSIResponse(request, "ERROR (File not found)");
+            SendSSIResponse(request, "ERROR");
             return;
         }
 
         // Parsiranje CTRL_ADD.TXT (formati: "101,102,103;" ili "101\n102\n103")
         uint16_t address_list[MAX_ADDRESS_LIST_SIZE];
+        // ISPRAVKA 1: Obavezno nuliraj cijeli bafer prije parsiranja!
+        // Ovo osigurava da nakon upisa kraće liste, ostatak EEPROM-a bude 0.
+        memset(address_list, 0, sizeof(address_list));
         uint16_t count = 0;
         
+        // ISPRAVKA 2: Poštuj ';' kao karakter za kraj liste.
+        int end_char_pos = content.indexOf(';');
+        if (end_char_pos != -1) {
+            content = content.substring(0, end_char_pos);
+        }
+
         content.replace("\n", ","); // Zamijeni nove redove zarezima
-        content.replace(";", ",");  // Zamijeni tačka-zarez zarezima
 
         int start = 0;
         int end = content.indexOf(',');
+        content += ','; // Dodaj zarez na kraj da bi petlja obradila i zadnji element
 
         while (end != -1 && count < MAX_ADDRESS_LIST_SIZE)
         {
@@ -417,31 +430,21 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             end = content.indexOf(',', start);
         }
 
-        // Procesuj zadnji element ako postoji
-        if (start < content.length() && count < MAX_ADDRESS_LIST_SIZE)
-        {
-            String addrStr = content.substring(start);
-            addrStr.trim();
-            if (addrStr.length() > 0 && addrStr.charAt(0) != '#')
-            {
-                uint16_t addr = addrStr.toInt();
-                if (addr > 0)
-                {
-                    address_list[count++] = addr;
-                }
-            }
+        // DEBUG ISPIS: Prikaži sve adrese koje će biti upisane
+        LOG_DEBUG(3, "[HttpServer] Pripremljeno %d adresa za upis u EEPROM:\n", count);
+        for(uint16_t i = 0; i < count; i++) {
+            Serial.printf("  -> Adresa[%d]: %04d (0x%04X)\n", i, address_list[i], address_list[i]);
         }
 
         // Upiši u EEPROM keš
         if (m_eeprom_storage->WriteAddressList(address_list, count))
         {
-            String response = "OK (" + String(count) + " addresses loaded)";
-            SendSSIResponse(request, response);
+            SendSSIResponse(request, "OK");
             // TODO: Treba signalizirati LogPullManageru da ponovo učita listu
         }
         else
         {
-            SendSSIResponse(request, "ERROR (EEPROM write failed)");
+            SendSSIResponse(request, "ERROR");
         }
         return;
     }
@@ -450,7 +453,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     if (request->hasParam("fwu") || request->hasParam("HCfwu"))
     {
         Serial.println("[HttpServer] Restarting system for update (fwu=hc)...");
-        SendSSIResponse(request, "OK (Restarting...)");
+        SendSSIResponse(request, "OK");
         delay(100);
         ESP.restart();
         return;
@@ -465,7 +468,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         if (StartUpdateSession(request, CMD_OLD_UPDATE_FWR, request->getParam("cud")->value(), request->getParam("cud")->value()))
         {
-            SendSSIResponse(request, "OK (Update started)");
+            SendSSIResponse(request, "OK");
         }
         else
         {
@@ -479,7 +482,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         if (StartUpdateSession(request, CMD_DWNLD_FWR_IMG, request->getParam("fuf")->value(), request->getParam("ful")->value()))
         {
-            SendSSIResponse(request, "OK (Update started)");
+            SendSSIResponse(request, "OK");
         }
         else
         {
@@ -493,7 +496,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         if (StartUpdateSession(request, CMD_DWNLD_BLDR_IMG, request->getParam("buf")->value(), request->getParam("bul")->value()))
         {
-            SendSSIResponse(request, "OK (Update started)");
+            SendSSIResponse(request, "OK");
         }
         else
         {
@@ -507,7 +510,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         if (StartUpdateSession(request, CMD_RT_DWNLD_FWR, request->getParam("tuf")->value(), request->getParam("tuf")->value()))
         {
-            SendSSIResponse(request, "OK (Update started)");
+            SendSSIResponse(request, "OK");
         }
         else
         {
@@ -521,7 +524,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         if (StartUpdateSession(request, CMD_RT_DWNLD_LOGO, request->getParam("tlg")->value(), request->getParam("tlg")->value()))
         {
-            SendSSIResponse(request, "OK (Update started)");
+            SendSSIResponse(request, "OK");
         }
         else
         {
@@ -533,40 +536,24 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     // --- RC update display image: iuf, iul, ifa, ila ---
     if (request->hasParam("iuf") && request->hasParam("iul") && request->hasParam("ifa") && request->hasParam("ila"))
     {
-        // UPOZORENJE: Ova logika je limitirana na JEDNU adresu (iuf),
-        // ali će sada ispravno iterirati kroz sve slike od 'ifa' do 'ila'.
-        uint16_t first_addr = request->getParam("iuf")->value().toInt();
-        // uint16_t last_addr = request->getParam("iul")->value().toInt(); // Trenutno se ne koristi
-        int first_img = request->getParam("ifa")->value().toInt();
-        int last_img = request->getParam("ila")->value().toInt();
-
-        if (first_img < 1 || last_img > 14 || first_img > last_img || first_addr == 0) {
-            SendSSIResponse(request, "ERROR (Invalid image range)");
+        // Provjeri da li postoji SD kartica
+        if (!m_sd_card_manager->IsCardMounted()) {
+            SendSSIResponse(request, "ERROR");
             return;
         }
 
-        // Petlja koja prolazi kroz sve slike za PRVU adresu
-        for (int img_idx = first_img; img_idx <= last_img; ++img_idx)
-        {
-            // Sačekaj da se prethodna sesija završi
-            while (m_update_manager->m_session.state != S_IDLE) {
-                delay(100); // Ne blokiraj sistem potpuno
-            }
+        uint16_t first_addr = request->getParam("iuf")->value().toInt();
+        uint16_t last_addr = request->getParam("iul")->value().toInt();
+        uint8_t first_img = request->getParam("ifa")->value().toInt();
+        uint8_t last_img = request->getParam("ila")->value().toInt();
 
-            Serial.printf("[HttpServer] Pokretanje update-a slike %d za adresu %d\n", img_idx, first_addr);
-            uint8_t updateCmd = CMD_IMG_RC_START + img_idx - 1;
-            
-            // Pokreni sesiju za jednu adresu i jednu sliku
-            if (!m_update_manager->StartSession(first_addr, updateCmd))
-            {
-                // Ako sesija ne može ni da počne (npr. fajl ne postoji), prekini sve.
-                String errorMsg = "ERROR (Failed to start session for image " + String(img_idx) + ")";
-                SendSSIResponse(request, errorMsg);
-                return; // Prekini ako jedna sesija ne uspe
-            }
+        if (first_img < 1 || last_img > 14 || first_img > last_img || first_addr == 0 || last_addr < first_addr) {
+            SendSSIResponse(request, "ERROR");
+            return;
         }
 
-        SendSSIResponse(request, "OK (Image update sequence started)");
+        m_update_manager->StartImageUpdateSequence(first_addr, last_addr, first_img, last_img);
+        SendSSIResponse(request, "OK (Image update sequence started)"); // Odmah odgovori
         return;
     }
 
@@ -812,9 +799,9 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             g_appConfig.rs485_group_addr = rga;
             g_appConfig.rs485_bcast_addr = rba;
             
-            if (m_eeprom_storage->WriteConfig(&g_appConfig)) {
-                SendSSIResponse(request, "OK (HC Config saved. Restart required for baudrate change.)");
-            } else {
+            if (m_eeprom_storage->WriteConfig(&g_appConfig)) 
+            {
+                SendSSIResponse(request, "OK");
                 SendSSIResponse(request, "ERROR (EEPROM Write)");
             }
             return; 
@@ -846,9 +833,9 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             Serial.println(F("[HttpServer] Primljen lokalni System ID..."));
             g_appConfig.system_id = new_id;
             if (!m_eeprom_storage->WriteConfig(&g_appConfig)) {
-                    SendSSIResponse(request, "ERROR (EEPROM Write)");
-                    return;
-            }
+                SendSSIResponse(request, "ERROR");
+                return;
+            }            
             targetAddrStr = "RSbra"; 
         }
         
@@ -862,7 +849,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     else if (request->hasParam("rst"))
     {
         targetAddrStr = request->getParam("rst")->value();
-        if (targetAddrStr == "0" || ParseMacros(targetAddrStr) == String(g_appConfig.rs485_iface_addr))
+        if (targetAddrStr == "0" || ParseMacros(targetAddrStr).toInt() == g_appConfig.rs485_iface_addr)
         {
             SendSSIResponse(request, "OK (Restarting HC...)");
             delay(100);
@@ -900,17 +887,23 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
 
         if (m_http_query_manager->ExecuteBlockingQuery(&cmd, response_buffer))
         {
-            String response_str = (char *)response_buffer;
-            SendSSIResponse(request, response_str.length() > 0 ? response_str : "OK");
+            // Upit je uspio, proslijedi stvarni odgovor ili "OK" ako je odgovor prazan.
+            String response_str((char*)response_buffer);
+            if (response_str.length() == 0) response_str = "OK"; // Fallback ako je odgovor prazan
+            
+            SendSSIResponse(request, response_str); // Proslijedi stvarni odgovor
         }
         else
         {
+            // =================================================================================
+            // KLJUČNA ISPRAVKA: Ako upit ne uspije (timeout), pošalji "TIMEOUT" odgovor.
+            // =================================================================================
             SendSSIResponse(request, "TIMEOUT");
         }
     }
     else
     {
-        SendSSIResponse(request, "ERROR (Unknown command)");
+        SendSSIResponse(request, "ERROR"); // Nepoznata komanda
     }
 }
 

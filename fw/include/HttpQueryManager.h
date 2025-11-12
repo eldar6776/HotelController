@@ -75,6 +75,9 @@ public:
     virtual void Service() override;
     virtual void ProcessResponse(uint8_t* packet, uint16_t length) override;
     virtual void OnTimeout() override;
+    bool WantsBus() override;
+    const char* Name() const override;
+    uint32_t GetTimeoutMs() const override;
 
 private:
     Rs485Service* m_rs485_service;
@@ -85,7 +88,7 @@ private:
     HttpCommand* m_pending_cmd;
     uint8_t* m_response_buffer_ptr;
     bool m_query_result;
-
+    uint8_t m_retry_count;
     uint16_t CreateRs485Packet(HttpCommand* cmd, uint8_t* buffer);
 };
 

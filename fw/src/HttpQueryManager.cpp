@@ -7,8 +7,10 @@
  */
 
 #include "HttpQueryManager.h"
+#include "DebugConfig.h"   // Uključujemo za LOG_RS485
 #include "ProjectConfig.h"
 #include "EepromStorage.h" // Za g_appConfig
+#include <esp_task_wdt.h>  // NOVO: Uključujemo za watchdog reset
 #include <cstring>
 
 // Globalni objekat za konfiguraciju (extern)
@@ -17,11 +19,15 @@ extern AppConfig g_appConfig;
 // Makro Vrijednosti
 #define DEF_HC_OWIFA 31U
 
+// Definišemo specifičan timeout za HTTP upite
+#define HTTP_QUERY_TIMEOUT_MS 50
+
 HttpQueryManager::HttpQueryManager() :
     m_rs485_service(NULL),
     m_pending_cmd(NULL),
     m_response_buffer_ptr(NULL),
     m_query_result(false),
+    m_retry_count(0), // NOVO: Inicijalizacija brojača
     m_query_mutex(NULL),
     m_response_semaphore(NULL)
 {
@@ -221,39 +227,46 @@ bool HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseB
         return false;
     }
 
+    LOG_DEBUG(4, "[HttpQuery] Primljen zahtev za komandu 0x%X na adresu 0x%X\n", cmd->cmd_id, cmd->address);
+
     m_pending_cmd = cmd;
     m_response_buffer_ptr = responseBuffer;
     m_query_result = false;
+    m_retry_count = 0; // NOVO: Resetuj brojač na početku svakog upita
 
-    // Resetuj semafor (za svaki slucaj ako je ostao 'dat' od ranije)
+    // Resetuj semafore (za svaki slucaj ako su ostali 'dati' od ranije)
     xSemaphoreTake(m_response_semaphore, 0); 
 
-    if (!m_rs485_service->RequestBusAccess(this))
-    {
-        Serial.println(F("[HttpQueryManager] Nije moguce dobiti pristup magistrali."));
-        m_pending_cmd = NULL; 
-        xSemaphoreGive(m_query_mutex);
-        return false;
-    }
+    bool response_received = false;
+
+    // KORAK 1: Signaliziraj da želimo magistralu.
+    // Dispečer će ovo vidjeti preko WantsBus() i prekinuti LogPullManager.
+    // Dispečer će pozvati naš Service() metod kada dobijemo pristup.
+    // Ovde samo čekamo da se cela transakcija završi.
     
-    // Uspješno smo zatražili magistralu. Rs485Service će pozvati naš Service()
-    // Service() će poslati paket i mi ćemo čekati da ProcessResponse/OnTimeout
-    // oslobode semafor.
-
-    // Čekanje na semafor do 10 sekundi (TIMEOUT)
-    if (xSemaphoreTake(m_response_semaphore, pdMS_TO_TICKS(10000)) == pdFALSE)
+    // KORAK 2: Čekaj da se transakcija završi (uspehom ili neuspehom)
+    // Ukupni timeout mora biti veći od svih mogućih retry-a + margine
+    // (MAX_RS485_RETRIES * RS485_RESP_TOUT_MS) + margina
+    // Primer: (3 * 45ms) + 200ms = 335ms. Koristimo malo veći timeout.
+    const TickType_t total_wait_ticks = pdMS_TO_TICKS( (MAX_RS485_RETRIES * RS485_RESP_TOUT_MS) + 200 );
+    if (xSemaphoreTake(m_response_semaphore, total_wait_ticks) == pdTRUE)
     {
-        Serial.println(F("[HttpQueryManager] HTTP Blokirajuci upit istekao (10s Timeout)!"));
-        m_query_result = false;
-        // Ako je semafor istekao, mi smo i dalje vlasnici busa
-        m_rs485_service->ReleaseBusAccess(this);
+        response_received = true; 
     }
 
-    m_pending_cmd = NULL;
-    m_response_buffer_ptr = NULL;
-
-    xSemaphoreGive(m_query_mutex);
-
+    if (!response_received)
+    {
+        LOG_DEBUG(2, "[HttpQuery] TIMEOUT. Nije primljen odgovor na komandu.\n");
+        LOG_DEBUG(1, "[HttpQuery] HTTP Blokirajuci upit istekao (timeout)!\n");
+        m_query_result = false;
+        // KRITIČNO: Ako je semafor istekao, moramo nasilno osloboditi magistralu!
+        // Ovo sprečava zaključavanje ako se desi neka nepredviđena greška.
+        // Iako Bus Watchdog ovo rešava, dobro je imati i ovde osiguranje.
+        m_rs485_service->ReleaseBusAccess(this);
+    }    
+    
+    xSemaphoreGive(m_query_mutex); // Otključaj mutex za sledeći HTTP zahtev
+    LOG_DEBUG(4, "[HttpQuery] Završen. Rezultat: %s\n", m_query_result ? "USPEH" : "NEUSPEH");
     return m_query_result;
 }
 
@@ -263,24 +276,29 @@ bool HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseB
  */
 void HttpQueryManager::Service()
 {
-    if (m_pending_cmd != NULL)
+    // Proveri da li smo dobili magistralu i da li imamo komandu
+    if (m_pending_cmd != NULL && m_rs485_service->GetCurrentBusOwner() == this)
     {
-        uint8_t packet[MAX_PACKET_LENGTH]; 
-        uint16_t length = CreateRs485Packet(m_pending_cmd, packet);
-        
-        if (!m_rs485_service->SendPacket(packet, length))
-        {
-            Serial.println(F("[HttpQueryManager] GRESKA: Nije moguce poslati paket."));
-            m_query_result = false;
-            m_rs485_service->ReleaseBusAccess(this);
-            xSemaphoreGive(m_response_semaphore); // Odblokiraj ExecuteBlockingQuery
+        // Ako je ovo prvi pokušaj (retry_count == 0), pošalji paket.
+        // U suprotnom, OnTimeout() će se pobrinuti za ponovno slanje.
+        if (m_retry_count == 0) {
+            uint8_t packet[MAX_PACKET_LENGTH]; 
+            uint16_t length = CreateRs485Packet(m_pending_cmd, packet);
+            
+            if (!m_rs485_service->SendPacket(packet, length))
+            {
+                // KRITIČNA ISPRAVKA: Ako slanje ne uspije, moramo osloboditi magistralu i odblokirati HTTP zahtjev.
+                LOG_DEBUG(1, "[HttpQuery] GRESKA: SendPacket nije uspio. Prekidam upit.\n");
+                m_query_result = false;
+                m_pending_cmd = NULL; // Obriši zahtjev
+                m_rs485_service->ReleaseBusAccess(this); // Oslobodi magistralu
+                xSemaphoreGive(m_response_semaphore); // Odblokiraj ExecuteBlockingQuery
+            }
         }
-        // Ako je slanje uspjelo, SendPacket() je prebacio stanje u WAITING.
-        // Mi samo čekamo ProcessResponse ili OnTimeout.
     }
     else
     {
-        // Ovo se ne bi smjelo desiti ako je RequestBusAccess bio uspješan
+        // Ako smo pozvani, a nemamo komandu, odmah oslobodi magistralu.
         m_rs485_service->ReleaseBusAccess(this);
     }
 }
@@ -290,27 +308,46 @@ void HttpQueryManager::Service()
  */
 void HttpQueryManager::ProcessResponse(uint8_t* packet, uint16_t length)
 {
+    m_retry_count = 0; // Resetuj brojač nakon uspešnog odgovora
+    LOG_DEBUG(4, "[HttpQuery] Primljen odgovor. Dužina: %d\n", length);
     if (m_response_buffer_ptr != NULL)
     {
-        uint16_t data_length = packet[5];
-
-        if (packet[0] == ACK) {
-             // Za ACK, možemo vratiti "ACK" ili payload ako postoji
-             if (data_length > 0) {
-                // Kopira se ceo DATA payload (počinje od indeksa 6)
-                memcpy(m_response_buffer_ptr, &packet[6], data_length);
-             } else {
-                strcpy((char*)m_response_buffer_ptr, "ACK");
-             }
-        } else {
-            // Za NACK ili druge odgovore, kopiraj ceo paket radi analize
-            memcpy(m_response_buffer_ptr, packet, length);
+        // =================================================================================
+        // KLJUČNA ISPRAVKA: Implementacija parsiranja identična originalnom kodu.
+        // memcpy(pcInsert, &rx_buff[7], rx_buff[5]-2U);
+        // =================================================================================
+        if (length >= 9) // Minimalna dužina paketa
+        {
+            uint16_t data_field_len = packet[5];
+            if (data_field_len >= 2 && (data_field_len + 7) <= length)
+            {
+                uint16_t payload_len = data_field_len - 2; // Tačna logika iz starog koda
+                memcpy(m_response_buffer_ptr, &packet[7], payload_len);
+                m_response_buffer_ptr[payload_len] = '\0'; // Osiguraj null-terminator
+            }
+            else
+            {
+                // Ako je odgovor samo ACK bez payload-a
+                strcpy((char*)m_response_buffer_ptr, "OK");
+            }
         }
+        else
+        {
+            // Ako je paket neispravan ili prekratak
+            strcpy((char*)m_response_buffer_ptr, "ERROR");
+        }
+        m_query_result = true;
     }
-    m_query_result = true;
     
-    xSemaphoreGive(m_response_semaphore);
-    // Rs485Service automatski oslobađa magistralu nakon ProcessResponse.
+    // =================================================================================
+    // KONAČNO REŠENJE: Pravilan redosled oslobađanja resursa.
+    // 1. Resetuj stanje (da WantsBus() vrati false).
+    // 2. Odblokiraj HTTP server.
+    // 3. Tek na kraju oslobodi magistralu.
+    // =================================================================================
+    m_pending_cmd = NULL;
+    xSemaphoreGive(m_response_semaphore); // Obavijesti ExecuteBlockingQuery da je posao gotov
+    m_rs485_service->ReleaseBusAccess(this);
 }
 
 /**
@@ -318,7 +355,47 @@ void HttpQueryManager::ProcessResponse(uint8_t* packet, uint16_t length)
  */
 void HttpQueryManager::OnTimeout()
 {
-    m_query_result = false;
-    xSemaphoreGive(m_response_semaphore);
-    // Rs485Service automatski oslobađa magistralu nakon OnTimeout.
+    m_retry_count++;
+    LOG_DEBUG(2, "[HttpQuery] Timeout. Pokušaj %d od %d...\n", m_retry_count, MAX_RS485_RETRIES);
+
+    if (m_retry_count >= MAX_RS485_RETRIES)
+    {
+        LOG_DEBUG(2, "[HttpQuery] Dostignut maksimalan broj pokušaja. Odustajem.\n");
+        m_query_result = false;
+        // KONAČNO REŠENJE: Pravilan redosled i ovde.
+        m_pending_cmd = NULL;
+        xSemaphoreGive(m_response_semaphore); // Odblokiraj ExecuteBlockingQuery sa rezultatom 'false'
+        m_rs485_service->ReleaseBusAccess(this); // Oslobodi magistralu nakon neuspjeha
+    }
+    else
+    {
+        // Ponovo pošalji isti paket
+        uint8_t packet[MAX_PACKET_LENGTH];
+        uint16_t length = CreateRs485Packet(m_pending_cmd, packet);
+        if (!m_rs485_service->SendPacket(packet, length))
+        {
+            LOG_DEBUG(1, "[HttpQuery] GRESKA: Ponovno slanje paketa nije uspjelo. Prekidam upit.\n");
+            m_query_result = false;
+            xSemaphoreGive(m_response_semaphore); // Odblokiraj HTTP sa greškom
+        }
+    }
+}
+
+/**
+ * @brief NOVO: Signalizira da HttpQueryManager ima hitan posao.
+ * @return true ako postoji komanda na čekanju, u suprotnom false.
+ */
+bool HttpQueryManager::WantsBus()
+{
+    return (m_pending_cmd != NULL);
+}
+
+const char* HttpQueryManager::Name() const
+{
+    return "HttpQueryManager";
+}
+
+uint32_t HttpQueryManager::GetTimeoutMs() const
+{
+    return HTTP_QUERY_TIMEOUT_MS;
 }

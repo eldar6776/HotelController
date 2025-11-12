@@ -33,6 +33,7 @@ public:
     void StartTask(); // NOVO: Metoda za pokretanje zadatka
     void Loop();
     bool IsNetworkConnected();
+    bool IsInitializationComplete(); // NOVO: Getter za provjeru
 
 private:
     // Metode za zadatak
@@ -55,6 +56,7 @@ private:
     int m_ping_failures;
     TaskHandle_t m_task_handle; // NOVO: Handle za zadatak
     HttpServer* m_http_server;  // NOVO: Pokazivač na HttpServer
+    bool m_initialization_complete; // NOVO: Flag da je inicijalizacija završena
 };
 
 #endif // NETWORK_MANAGER_H

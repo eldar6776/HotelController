@@ -26,6 +26,9 @@ public:
     virtual void Service() override;
     virtual void ProcessResponse(uint8_t* packet, uint16_t length) override;
     virtual void OnTimeout() override;
+    bool WantsBus() override;
+    const char* Name() const override;
+    uint32_t GetTimeoutMs() const override;
 
 private:
     void SendStatusRequest(uint16_t address);
@@ -47,6 +50,7 @@ private:
     uint16_t m_current_pull_address;
     uint16_t m_address_list[MAX_ADDRESS_LIST_SIZE];
     uint16_t m_address_list_count;
+    uint8_t m_retry_count;
 };
 
 #endif // LOG_PULL_MANAGER_H

@@ -5,7 +5,7 @@
  * @brief   Implementacija LogPullManager modula.
  ******************************************************************************
  */
-
+#include "DebugConfig.h" 
 #include "LogPullManager.h"
 #include "ProjectConfig.h"
 #include <cstring> 
@@ -27,7 +27,8 @@ LogPullManager::LogPullManager() :
     m_state(PullState::IDLE),
     m_current_address_index(0),
     m_current_pull_address(0),
-    m_address_list_count(0)
+    m_address_list_count(0),
+    m_retry_count(0) // NOVO: Inicijalizacija brojača
 {
     // Konstruktor
 }
@@ -46,6 +47,10 @@ void LogPullManager::Initialize(Rs485Service* pRs485Service, EepromStorage* pEep
     else
     {
         Serial.printf("[LogPullManager] Lista adresa ucitana, %d uredjaja.\n", m_address_list_count);
+        // DEBUG ISPIS: Prikaži sve adrese koje su pročitane
+        for(uint16_t i = 0; i < m_address_list_count; i++) {
+            Serial.printf("  -> Pročitana Adresa[%d]: %04d (0x%04X)\n", i, m_address_list[i], m_address_list[i]);
+        }
     }
 }
 
@@ -56,18 +61,25 @@ void LogPullManager::Service()
 {
     if (m_address_list_count == 0)
     {
-        // Prazna lista, oslobodi magistralu
+        // Prazna lista, ne radimo ništa. Odmah oslobodi magistralu.
         m_rs485_service->ReleaseBusAccess(this);
         return;
     }
     
-    if (m_state == PullState::IDLE)
+    // Ako smo dobili magistralu, a nismo već u sred transakcije
+    if (m_state == PullState::IDLE && m_rs485_service->GetCurrentBusOwner() == this)
     {
         // Uzmi sljedecu adresu i posalji upit za status (Polling)
+        LOG_DEBUG(4, "[LogPull] Stanje: IDLE. Uzimam sljedeću adresu...\n");
         m_current_pull_address = GetNextAddress();
+        m_retry_count = 0; // NOVO: Resetuj brojač za novi uređaj
         SendStatusRequest(m_current_pull_address);
     }
-    // Ako nismo IDLE (čekamo ACK), ostajemo vlasnici busa.
+    else if (m_state == PullState::IDLE)
+    {
+        // Nismo vlasnici, a pozvani smo? To ne bi trebalo da se desi, ali za svaki slučaj oslobodi.
+        m_rs485_service->ReleaseBusAccess(this);
+    }
 }
 
 /**
@@ -97,7 +109,7 @@ uint16_t LogPullManager::GetNextAddress()
  */
 void LogPullManager::SendStatusRequest(uint16_t address)
 {
-    Serial.printf("[LogPullManager] Slanje GET_SYS_STAT na adresu 0x%X\n", address);
+    LOG_DEBUG(4, "[LogPull] -> Šaljem GET_SYS_STAT na adresu 0x%X\n", address);
     
     uint8_t packet[10]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
@@ -121,12 +133,14 @@ void LogPullManager::SendStatusRequest(uint16_t address)
     
     if (m_rs485_service->SendPacket(packet, 10))
     {
+        LOG_DEBUG(5, "[LogPull] -> Stanje prešlo u WAITING_FOR_STATUS_ACK\n");
         m_state = PullState::WAITING_FOR_STATUS_ACK;
     }
     else
     {
+        LOG_DEBUG(1, "[LogPull] GRESKA: SendPacket nije uspio. Resetujem stanje na IDLE.\n");
         m_state = PullState::IDLE;
-        m_rs485_service->ReleaseBusAccess(this);
+        m_rs485_service->ReleaseBusAccess(this); // Oslobodi magistralu
     }
 }
 
@@ -135,7 +149,7 @@ void LogPullManager::SendStatusRequest(uint16_t address)
  */
 void LogPullManager::SendLogRequest(uint16_t address)
 {
-    Serial.printf("[LogPullManager] Slanje GET_LOG_LIST na adresu 0x%X\n", address);
+    LOG_DEBUG(4, "[LogPull] -> Uređaj ima log. Šaljem GET_LOG_LIST na adresu 0x%X\n", address);
 
     uint8_t packet[10]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
@@ -159,12 +173,14 @@ void LogPullManager::SendLogRequest(uint16_t address)
     
     if (m_rs485_service->SendPacket(packet, 10))
     {
+        LOG_DEBUG(5, "[LogPull] -> Stanje prešlo u WAITING_FOR_LOG_ACK\n");
         m_state = PullState::WAITING_FOR_LOG_ACK;
     }
     else
     {
+        LOG_DEBUG(1, "[LogPull] GRESKA: SendPacket (za log) nije uspio. Resetujem stanje na IDLE.\n");
         m_state = PullState::IDLE;
-        m_rs485_service->ReleaseBusAccess(this);
+        m_rs485_service->ReleaseBusAccess(this); // Oslobodi magistralu
     }
 }
 
@@ -174,6 +190,7 @@ void LogPullManager::SendLogRequest(uint16_t address)
  */
 void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
 {
+    m_retry_count = 0; // Resetuj brojač nakon uspešnog odgovora
     // Pretpostavljamo da je paket validiran od strane Rs485Service
     uint8_t response_cmd = packet[6];
     
@@ -185,7 +202,7 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
             // za provjeru pending loga. Pretpostavljamo da je Log Status na indeksu 7 (rx_buff[7]).
             uint8_t log_pending_flag = packet[7]; 
             
-            Serial.printf("[LogPullManager] Primljen odgovor na STAT sa adrese 0x%X. Log pending: %d\n", m_current_pull_address, log_pending_flag);
+            LOG_DEBUG(4, "[LogPull] Primljen odgovor na STAT sa adrese 0x%X. Log pending: %d\n", m_current_pull_address, log_pending_flag);
 
             if (log_pending_flag > 0) // Ako postoji pending log
             {
@@ -204,9 +221,9 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
         {
             // Očekujemo da odgovor sadrži LogEntry + status/overhead (LOG_RECORD_SIZE)
             // LogEntry = 16 bajtova, LOG_RECORD_SIZE = 20 (u memoriji EEPROM-a)
-            if (data_len >= sizeof(LogEntry)) 
+            if (data_len > 1) // Svaki log ima bar 1 bajt payload-a
             {
-                Serial.printf("[LogPullManager] Primljen LOG (Dužina: %d) sa adrese 0x%X\n", data_len, m_current_pull_address);
+                LOG_DEBUG(3, "[LogPull] Primljen LOG (Dužina: %d) sa adrese 0x%X\n", data_len, m_current_pull_address);
                 
                 LogEntry newLog; 
                 // Podaci počinju od paketa[7] (poslije CMD bajta)
@@ -215,18 +232,16 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
                 // Zapiši log u EEPROM
                 if (m_eeprom_storage->WriteLog(&newLog) == LoggerStatus::LOGGER_OK)
                 {
-                    Serial.println(F("[LogPullManager] Log uspješno zapisan u EEPROM."));
+                    LOG_DEBUG(3, "[LogPull] Log uspješno zapisan u EEPROM.\n");
                 }
             }
             else
             {
-                 // ACK, ali nema log payload-a (ili je prazan)
-                Serial.printf("[LogPullManager] Uredjaj 0x%X potvrdio praznu log listu.\n", m_current_pull_address);
+                LOG_DEBUG(4, "[LogPull] Uredjaj 0x%X potvrdio praznu log listu.\n", m_current_pull_address);
             }
         }
     }
 
-    // Završili smo sa ovim uređajem (ili smo primili log ili je lista prazna)
     m_state = PullState::IDLE;
     m_rs485_service->ReleaseBusAccess(this);
 }
@@ -236,7 +251,45 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
  */
 void LogPullManager::OnTimeout()
 {
-    Serial.printf("[LogPullManager] Uredjaj 0x%X nije odgovorio (Timeout).\n", m_current_pull_address);
-    m_state = PullState::IDLE;
-    // Rs485Service će automatski osloboditi magistralu
+    m_retry_count++;
+    LOG_DEBUG(2, "[LogPull] Timeout za 0x%X. Pokušaj %d od %d...\n", m_current_pull_address, m_retry_count, MAX_RS485_RETRIES);
+
+    if (m_retry_count >= MAX_RS485_RETRIES)
+    {
+        LOG_DEBUG(2, "[LogPull] Uredjaj 0x%X nedostupan nakon %d pokušaja. Oslobađam magistralu.\n", m_current_pull_address, MAX_RS485_RETRIES);
+        m_state = PullState::IDLE;
+        m_rs485_service->ReleaseBusAccess(this);
+    }
+    else
+    {
+        // Ponovo pošalji isti zahtev (Status ili Log)
+        if (m_state == PullState::WAITING_FOR_STATUS_ACK) {
+            SendStatusRequest(m_current_pull_address);
+        }
+        else if (m_state == PullState::WAITING_FOR_LOG_ACK) {
+            SendLogRequest(m_current_pull_address);
+        } else {
+            // Neočekivano stanje, oslobodi magistralu
+            m_rs485_service->ReleaseBusAccess(this);
+        }
+    }
+}
+
+bool LogPullManager::WantsBus()
+{
+    // LogPullManager uvijek želi magistralu ako je slobodna,
+    // jer je to pozadinski posao koji se stalno vrti.
+    // Dispečer će ga prekinuti ako se pojavi zadatak višeg prioriteta.
+    // Dodatna provjera da ne tražimo bus ako je lista prazna.
+    return (m_address_list_count > 0);
+}
+
+const char* LogPullManager::Name() const
+{
+    return "LogPullManager";
+}
+
+uint32_t LogPullManager::GetTimeoutMs() const
+{
+    return RS485_RESP_TOUT_MS; // Koristimo standardni timeout za polling
 }

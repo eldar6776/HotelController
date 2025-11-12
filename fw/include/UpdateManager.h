@@ -44,6 +44,18 @@ enum UpdateState
     S_PENDING_CLEANUP
 };
 
+// NOVO: Struktura za praćenje sekvence ažuriranja slika
+struct ImageUpdateSequence
+{
+    bool is_active;
+    uint16_t first_addr;
+    uint16_t last_addr;
+    uint8_t first_img;
+    uint8_t last_img;
+    uint16_t current_addr;
+    uint8_t current_img;
+};
+
 // Tipovi Update-a
 enum UpdateType
 {
@@ -91,28 +103,40 @@ public:
     UpdateManager();
     void Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCardManager);
 
-    // CHANGED: Pokazivač na SdCardManager umjesto SpiFlashStorage
-    SdCardManager* m_sd_card_manager;
-
-    // Podržavamo samo jednu sesiju odjednom
-    UpdateSession m_session;
-    
     /**
      * @brief Poziva HttpServer da započne novu sesiju, koristi Update CMD kod.
      */
     bool StartSession(uint8_t clientAddress, uint8_t updateCmd);
 
+    /**
+     * @brief NOVO: Pokreće sekvencu ažuriranja za više adresa i slika.
+     * @param first_addr Prva adresa kontrolera.
+     * @param last_addr Zadnja adresa kontrolera.
+     * @param first_img Indeks prve slike.
+     * @param last_img Indeks zadnje slike.
+     */
+    void StartImageUpdateSequence(uint16_t first_addr, uint16_t last_addr, uint8_t first_img, uint8_t last_img);
+
     // Implementacija IRs485Manager interfejsa
-    virtual void Service() override;
-    virtual void ProcessResponse(uint8_t* packet, uint16_t length) override;
-    virtual void OnTimeout() override;
+    void Service() override;
+    void ProcessResponse(uint8_t* packet, uint16_t length) override;
+    void OnTimeout() override;
+    const char* Name() const override { return "UpdateManager"; }
+    bool WantsBus() override;
+    uint32_t GetTimeoutMs() const override;
+
+public:
+    // Podržavamo samo jednu sesiju odjednom
+    UpdateSession m_session; // Javno zbog HttpServer-a
+
+    ImageUpdateSequence m_sequence; // NOVO: Stanje sekvence
 
 private:
-    void SendStartRequest(UpdateSession* s);
-    void SendDataPacket(UpdateSession* s);
-    void SendFinishRequest(UpdateSession* s);
-    void SendRestartCommand(UpdateSession* s); // DODATO: Deklaracija funkcije
-    void CleanupSession(UpdateSession* s);
+    void SendStartRequest();
+    void SendDataPacket();
+    void SendFinishRequest();
+    void SendRestartCommand();
+    void CleanupSession();
     
     // REFAKTORISANA: Određuje ime fajla, otvara ga i čita metadatu
     bool PrepareSession(UpdateSession* s, uint8_t updateCmd); 
@@ -122,6 +146,7 @@ private:
     bool ReadMetadataFromFile(const String& metaFilePath, uint32_t* size, uint32_t* crc);
 
     Rs485Service* m_rs485_service;
+    SdCardManager* m_sd_card_manager;
 };
 
 #endif // UPDATE_MANAGER_H

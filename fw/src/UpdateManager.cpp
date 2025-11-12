@@ -53,6 +53,7 @@ static const uint32_t crc32_table[256] = {
 UpdateManager::UpdateManager()
 {
     m_session.state = UpdateState::S_IDLE;
+    m_sequence.is_active = false; // NOVO
     m_rs485_service = NULL;
     m_sd_card_manager = NULL;
     m_session.is_read_active = false;
@@ -128,8 +129,17 @@ bool UpdateManager::PrepareSession(UpdateSession* s, uint8_t updateCmd)
     if (updateCmd >= CMD_IMG_RC_START && updateCmd <= CMD_IMG_RC_END)
     {
         uint8_t img_num = updateCmd - CMD_IMG_RC_START + 1;
-        filename = "/IMG" + String(img_num) + ".RAW";
+
+        // KONAČNA ISPRAVKA: Koristi adresu klijenta za formiranje imena fajla
+        // s->clientAddress je postavljen prije poziva ove funkcije
+        if (s->clientAddress != 0) {
+            filename = "/" + String(s->clientAddress) + "_" + String(img_num) + ".RAW";
+        } else {
+            // Fallback ako adresa nije poznata (ne bi se smjelo desiti za slike)
+            filename = "/IMG" + String(img_num) + ".RAW";
+        }
         s->type = TYPE_IMG_RC;
+        Serial.printf("[UpdateManager] Priprema za slanje slike, fajl: %s\n", filename.c_str());
     }
     else
     {
@@ -200,6 +210,22 @@ bool UpdateManager::PrepareSession(UpdateSession* s, uint8_t updateCmd)
     return true;
 }
 
+void UpdateManager::StartImageUpdateSequence(uint16_t first_addr, uint16_t last_addr, uint8_t first_img, uint8_t last_img)
+{
+    if (m_sequence.is_active || m_session.state != S_IDLE) {
+        Serial.println("[UpdateManager] UPOZORENJE: Nova sekvenca zatražena dok je stara aktivna.");
+        return;
+    }
+    m_sequence.is_active = true;
+    m_sequence.first_addr = first_addr;
+    m_sequence.last_addr = last_addr;
+    m_sequence.first_img = first_img;
+    m_sequence.last_img = last_img;
+    m_sequence.current_addr = first_addr;
+    m_sequence.current_img = first_img;
+    Serial.printf("[UpdateManager] Sekvenca ažuriranja slika pokrenuta: Adrese %d-%d, Slike %d-%d\n", first_addr, last_addr, first_img, last_img);
+}
+
 bool UpdateManager::StartSession(uint8_t clientAddress, uint8_t updateCmd)
 {
     if (m_session.state != UpdateState::S_IDLE)
@@ -225,10 +251,44 @@ bool UpdateManager::StartSession(uint8_t clientAddress, uint8_t updateCmd)
     return true;
 }
 
+/**
+ * @brief Poziva se od strane Rs485Service dispecera kada je nas red.
+ * @note Ova funkcija sada samo obrađuje postojeće stanje.
+ *       Pokretanje nove sesije se dešava kroz `StartSession` ili `StartImageUpdateSequence`.
+ *       `WantsBus` signalizira dispečeru da imamo posla.
+ */
 void UpdateManager::Service()
 {
+    // NOVO: Logika za pokretanje sekvence
+    if (m_sequence.is_active && m_session.state == UpdateState::S_IDLE)
+    {
+        // Provjeri jesmo li završili cijelu sekvencu
+        if (m_sequence.current_addr > m_sequence.last_addr)
+        {
+            Serial.println("[UpdateManager] Sekvenca ažuriranja slika ZAVRŠENA.");
+            m_sequence.is_active = false;
+            m_rs485_service->ReleaseBusAccess(this);
+            return;
+        }
+
+        // Pokreni sesiju za trenutnu adresu i sliku
+        uint8_t updateCmd = CMD_IMG_RC_START + m_sequence.current_img - 1;
+        Serial.printf("[UpdateManager] Pokretanje dijela sekvence: Adresa %d, Slika %d\n", m_sequence.current_addr, m_sequence.current_img);
+        if (!StartSession(m_sequence.current_addr, updateCmd))
+        {
+             // Greška pri pokretanju (npr. fajl ne postoji), preskoči na sljedeću sliku
+             Serial.printf("[UpdateManager] Greška pri pokretanju sesije za %d_%d.RAW. Preskačem.\n", m_sequence.current_addr, m_sequence.current_img);
+             // Odmah prelazimo na sljedeću iteraciju
+             CleanupSession();
+             ProcessResponse(nullptr, 0); // Pozivamo da bi se pokrenula logika za sljedeću sliku/adresu
+        }
+        // Ako je StartSession uspio, on će preuzeti kontrolu i pozvati SendStartRequest.
+        // Mi ovdje ne radimo ništa više, čekamo da se sesija završi.
+    }
+
     if (m_session.state == UpdateState::S_IDLE)
     {
+        // Ako nemamo posla, oslobodi magistralu.
         m_rs485_service->ReleaseBusAccess(this);
         return;
     }
@@ -239,6 +299,7 @@ void UpdateManager::Service()
         return;
     }
 
+    // Ako čekamo ACK, ne radimo ništa, Rs485Service će nas obavijestiti o odgovoru ili timeout-u.
     if (m_session.state == UpdateState::S_WAITING_FOR_START_ACK ||
         m_session.state == UpdateState::S_WAITING_FOR_DATA_ACK ||
         m_session.state == UpdateState::S_WAITING_FOR_FINISH_ACK)
@@ -249,23 +310,25 @@ void UpdateManager::Service()
     switch (m_session.state)
     {
     case UpdateState::S_STARTING:
-        SendStartRequest(&m_session);
+        SendStartRequest();
         break;
     case UpdateState::S_SENDING_DATA:
-        SendDataPacket(&m_session);
+        SendDataPacket();
         break;
     case UpdateState::S_FINISHING:
-        SendFinishRequest(&m_session);
+        SendFinishRequest();
         break;
     case UpdateState::S_PENDING_RESTART_CMD:
-        SendRestartCommand(&m_session);
+        SendRestartCommand();
         break;
     case UpdateState::S_PENDING_CLEANUP:
-        CleanupSession(&m_session);
+        CleanupSession();
         m_rs485_service->ReleaseBusAccess(this);
         break;
     case UpdateState::S_COMPLETED_OK:
     case UpdateState::S_FAILED:
+        // U ovim stanjima, ProcessResponse ili OnTimeout su već pozvani.
+        // Oni će pokrenuti Cleanup i osloboditi magistralu.
         m_session.state = UpdateState::S_PENDING_CLEANUP;
         break;
     default:
@@ -275,6 +338,24 @@ void UpdateManager::Service()
 
 void UpdateManager::ProcessResponse(uint8_t* packet, uint16_t length)
 {
+    // NOVO: Logika za napredovanje sekvence nakon završetka jedne sesije
+    if (m_sequence.is_active) {
+        // Bilo da je uspjelo ili ne, prelazimo na sljedeću sliku/adresu
+        m_sequence.current_img++;
+        if (m_sequence.current_img > m_sequence.last_img) {
+            m_sequence.current_img = m_sequence.first_img;
+            m_sequence.current_addr++;
+        }
+        // Ovdje ne radimo ništa više. Service() će u sljedećem ciklusu pokrenuti novu sesiju.
+        // Ali moramo resetovati stanje trenutne sesije.
+        CleanupSession();
+        m_rs485_service->ReleaseBusAccess(this); // Oslobodi bus
+        return;
+    }
+
+    // Ako paket ne postoji (preskakanje fajla), odmah izađi
+    if (packet == nullptr) return;
+
     uint8_t response_cmd = packet[6];
     uint8_t ack_nack = packet[0];
 
@@ -290,6 +371,7 @@ void UpdateManager::ProcessResponse(uint8_t* packet, uint16_t length)
         {
             Serial.println(F("[UpdateManager] START NACK/GREŠKA."));
             m_session.state = S_FAILED;
+            m_rs485_service->ReleaseBusAccess(this);
         }
     }
     else if (m_session.state == UpdateState::S_WAITING_FOR_DATA_ACK)
@@ -344,6 +426,7 @@ void UpdateManager::ProcessResponse(uint8_t* packet, uint16_t length)
         {
             Serial.println(F("[UpdateManager] NEOČEKIVAN OGD. Prekid update-a."));
             m_session.state = S_FAILED;
+            m_rs485_service->ReleaseBusAccess(this);
         }
     }
     else if (m_session.state == UpdateState::S_WAITING_FOR_FINISH_ACK)
@@ -352,34 +435,69 @@ void UpdateManager::ProcessResponse(uint8_t* packet, uint16_t length)
         {
             Serial.println(F("[UpdateManager] FINISH ACK. Update USPJEŠAN!"));
             m_session.state = S_COMPLETED_OK;
+            m_rs485_service->ReleaseBusAccess(this);
         }
         else
         {
             Serial.println(F("[UpdateManager] FINISH NACK/GREŠKA. Update NEUSPJEŠAN."));
             m_session.state = S_FAILED;
+            m_rs485_service->ReleaseBusAccess(this);
         }
     }
 }
 
 void UpdateManager::OnTimeout()
 {
-    if (m_session.retryCount < MAX_UPDATE_RETRIES)
-    {
-        m_session.retryCount++;
-        
-        if (m_session.state == S_WAITING_FOR_START_ACK) m_session.state = S_STARTING;
-        if (m_session.state == S_WAITING_FOR_DATA_ACK) m_session.state = S_SENDING_DATA;
-        if (m_session.state == S_WAITING_FOR_FINISH_ACK) m_session.state = S_FINISHING;
+    // NOVO: Logika za napredovanje sekvence nakon timeout-a
+    if (m_sequence.is_active) {
+        Serial.printf("[UpdateManager] Timeout za adresu %d, slika %d. Prelazim na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
+        m_sequence.current_img++;
+        if (m_sequence.current_img > m_sequence.last_img) {
+            m_sequence.current_img = m_sequence.first_img;
+            m_sequence.current_addr++;
+        }
+        CleanupSession();
+        m_rs485_service->ReleaseBusAccess(this);
+        return;
     }
-    else
+
+    // Stara logika za pojedinačne sesije
+    // ISPRAVKA: Uvećaj brojač tek nakon provjere
+    if (m_session.retryCount >= MAX_UPDATE_RETRIES)
     {
         Serial.println(F("[UpdateManager] GREŠKA: Previše neuspješnih pokušaja. Update prekinut."));
         m_session.state = S_FAILED;
+        m_rs485_service->ReleaseBusAccess(this);
+    }
+    else
+    {
+        m_session.retryCount++; // Uvećaj brojač za sljedeći pokušaj
+        Serial.printf("[UpdateManager] Timeout. Pokušaj %d od %d...\n", m_session.retryCount, MAX_UPDATE_RETRIES);
+
+        // Ponovo pošalji isti paket
+        switch(m_session.state) {
+            case S_WAITING_FOR_START_ACK:
+                SendStartRequest();
+                break;
+            case S_WAITING_FOR_DATA_ACK:
+                // Vraćamo fajl pointer na početak zadnjeg pročitanog chunka.
+                m_session.fw_file.seek(m_session.bytesSent);
+                SendDataPacket();
+                break;
+            case S_WAITING_FOR_FINISH_ACK:
+                SendFinishRequest();
+                break;
+            default:
+                Serial.println("[UpdateManager] Timeout u neočekivanom stanju. Oslobađam magistralu.\n");
+                m_rs485_service->ReleaseBusAccess(this); // Neočekivano stanje
+                break;
+        }
     }
 }
 
-void UpdateManager::SendStartRequest(UpdateSession* s)
+void UpdateManager::SendStartRequest()
 {
+    UpdateSession* s = &m_session;
     uint8_t packet[32]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
     uint16_t data_len = 12;
@@ -424,18 +542,20 @@ void UpdateManager::SendStartRequest(UpdateSession* s)
     }
     else
     {
-        s->state = S_IDLE;
+        // ISPRAVKA: Ako slanje ne uspije, prekini sesiju
+        s->state = S_FAILED;
         m_rs485_service->ReleaseBusAccess(this);
     }
 }
 
-void UpdateManager::SendDataPacket(UpdateSession* s)
+void UpdateManager::SendDataPacket()
 {
+    UpdateSession* s = &m_session;
     int16_t bytes_read = s->fw_file.read(s->read_buffer, UPDATE_DATA_CHUNK_SIZE);
     
     if (bytes_read <= 0)
     {
-        Serial.println(F("[UpdateManager] Čitanje sa kartice završeno."));
+        Serial.println(F("[UpdateManager] Čitanje sa kartice završeno. Prelazim na FINISH."));
         s->state = S_FINISHING; 
         return;
     }
@@ -474,13 +594,15 @@ void UpdateManager::SendDataPacket(UpdateSession* s)
     }
     else
     {
-        s->state = S_IDLE; 
+        // ISPRAVKA: Ako slanje ne uspije, prekini sesiju
+        s->state = S_FAILED;
         m_rs485_service->ReleaseBusAccess(this);
     }
 }
 
-void UpdateManager::SendFinishRequest(UpdateSession* s)
+void UpdateManager::SendFinishRequest()
 {
+    UpdateSession* s = &m_session;
     uint8_t packet[32]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
     uint16_t data_len = 1;
@@ -508,7 +630,8 @@ void UpdateManager::SendFinishRequest(UpdateSession* s)
     }
     else
     {
-        s->state = S_IDLE; 
+        // ISPRAVKA: Ako slanje ne uspije, prekini sesiju
+        s->state = S_FAILED;
         m_rs485_service->ReleaseBusAccess(this);
     }
 }
@@ -516,10 +639,11 @@ void UpdateManager::SendFinishRequest(UpdateSession* s)
 /**
  * @brief Šalje START_BLDR komandu nakon UPDATE_FWR. Replicira stari protokol.
  */
-void UpdateManager::SendRestartCommand(UpdateSession* s)
+void UpdateManager::SendRestartCommand()
 {
+    UpdateSession* s = &m_session;
     Serial.println(F("[UpdateManager] Slanje START_BLDR komande..."));
-
+    
     uint8_t packet[32]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
     uint16_t data_len = 1;
@@ -543,20 +667,36 @@ void UpdateManager::SendRestartCommand(UpdateSession* s)
     // Nakon timeout-a, sesija će se završiti.
     if (m_rs485_service->SendPacket(packet, 10))
     {
-        s->state = S_COMPLETED_OK; // Smatramo da je uspješno poslato.
+        // Ne očekujemo odgovor, ali Rs485Service će čekati timeout.
+        // OnTimeout će osloboditi magistralu.
+        s->state = S_COMPLETED_OK;
     }
     else
     {
         s->state = S_FAILED; 
+        m_rs485_service->ReleaseBusAccess(this);
     }
 }
 
-void UpdateManager::CleanupSession(UpdateSession* s)
+void UpdateManager::CleanupSession()
 {
-    if (s->is_read_active && s->fw_file)
+    if (m_session.is_read_active && m_session.fw_file)
     {
-        s->fw_file.close();
-        s->is_read_active = false;
+        m_session.fw_file.close();
+        m_session.is_read_active = false;
     }
-    s->state = S_IDLE;
+    m_session.state = S_IDLE;
+}
+
+/**
+ * @brief Signalizira da li UpdateManager ima posla.
+ */
+bool UpdateManager::WantsBus()
+{
+    return (m_session.state != S_IDLE || m_sequence.is_active);
+}
+
+uint32_t UpdateManager::GetTimeoutMs() const
+{
+    return UPDATE_PACKET_TIMEOUT_MS; // Koristi specifičan timeout za update
 }

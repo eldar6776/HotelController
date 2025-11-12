@@ -44,15 +44,14 @@ void TimeSync::Initialize(Rs485Service* pRs485Service)
  */
 void TimeSync::Service()
 {
-    if (millis() - m_last_sync_time > TIME_BROADCAST_INTERVAL_MS)
+    if (WantsBus())
     {
-        m_last_sync_time = millis();
         SendTimeBroadcast();
-        // Očekujemo da SendTimeBroadcast() oslobodi magistralu
     }
     else
     {
         // Jos nije vrijeme, oslobodi magistralu
+        // Ovo se ne bi smjelo desiti ako WantsBus() radi ispravno, ali kao osiguranje.
         m_rs485_service->ReleaseBusAccess(this);
     }
 }
@@ -62,6 +61,7 @@ void TimeSync::Service()
  */
 void TimeSync::SendTimeBroadcast()
 {
+    m_last_sync_time = millis(); // Resetuj tajmer tek kada stvarno šaljemo
     Serial.println(F("[TimeSync] Slanje broadcast vremena..."));
     
     uint8_t packet[RTC_PACKET_LENGTH];
@@ -107,7 +107,7 @@ void TimeSync::SendTimeBroadcast()
     // Slanje paketa (Broadcast ne očekuje odgovor, ali Rs485Service čeka timeout)
     m_rs485_service->SendPacket(packet, RTC_PACKET_LENGTH);
     
-    // Broadcast je gotov; odmah oslobodi magistralu da bi je preuzeo LogPullManager (niži prioritet)
+    // Broadcast je poslat; odmah oslobodi magistralu.
     m_rs485_service->ReleaseBusAccess(this);
 }
 
@@ -126,5 +126,26 @@ void TimeSync::ProcessResponse(uint8_t* packet, uint16_t length)
  */
 void TimeSync::OnTimeout()
 {
-    // Ignorise se
+    // Timeout je očekivan za broadcast. Samo oslobodi magistralu.
+    m_rs485_service->ReleaseBusAccess(this);
+}
+
+/**
+ * @brief Signalizira da li TimeSync želi da koristi magistralu.
+ * @return true ako je vrijeme za slanje broadcast-a, u suprotnom false.
+ */
+bool TimeSync::WantsBus()
+{
+    return (millis() - m_last_sync_time > TIME_BROADCAST_INTERVAL_MS);
+}
+
+const char* TimeSync::Name() const
+{
+    return "TimeSync";
+}
+
+uint32_t TimeSync::GetTimeoutMs() const
+{
+    // Broadcast ne čeka odgovor, stoga je timeout minimalan.
+    return 1; 
 }

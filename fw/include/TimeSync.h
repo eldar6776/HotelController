@@ -27,6 +27,9 @@ public:
     virtual void Service() override;
     virtual void ProcessResponse(uint8_t* packet, uint16_t length) override;
     virtual void OnTimeout() override;
+    bool WantsBus() override;
+    const char* Name() const override;
+    uint32_t GetTimeoutMs() const override;
 
 private:
     void SendTimeBroadcast();

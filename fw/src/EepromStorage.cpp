@@ -7,6 +7,7 @@
  */
 
 #include "EepromStorage.h"
+#include "DebugConfig.h"
 
 // Konstante za EEPROM
 #define EEPROM_PAGE_SIZE 128 
@@ -28,7 +29,7 @@ EepromStorage::EepromStorage() :
 // ============================================================================
 void EepromStorage::LoadDefaultConfig()
 {
-    Serial.println(F("[EepromStorage] UPOZORENJE: EEPROM je prazan ili neispravan. Učitavam podrazumijevane vrijednosti..."));
+    LOG_DEBUG(2, "[Eeprom] UPOZORENJE: EEPROM je prazan ili neispravan. Učitavam podrazumijevane vrijednosti...\n");
 
     // 1. Mrežne postavke
     g_appConfig.ip_address = IPAddress(DEFAULT_IP_ADDR0, DEFAULT_IP_ADDR1, DEFAULT_IP_ADDR2, DEFAULT_IP_ADDR3);
@@ -50,24 +51,25 @@ void EepromStorage::LoadDefaultConfig()
     // 5. Snimi nove (defaultne) vrijednosti u EEPROM
     if (WriteConfig(&g_appConfig))
     {
-        Serial.println(F("[EepromStorage] Podrazumijevane vrijednosti uspješno snimljene u EEPROM."));
+        LOG_DEBUG(3, "[Eeprom] Podrazumijevane vrijednosti uspješno snimljene u EEPROM.\n");
     }
     else
     {
-        Serial.println(F("[EepromStorage] GRESKA: Snimanje podrazumijevanih vrijednosti nije uspjelo!"));
+        LOG_DEBUG(1, "[Eeprom] GRESKA: Snimanje podrazumijevanih vrijednosti nije uspjelo!\n");
     }
 }
 
 void EepromStorage::Initialize(int8_t sda_pin, int8_t scl_pin)
 {
-    Serial.printf("[EepromStorage] Inicijalizacija I2C na SDA=%d, SCL=%d\r\n", sda_pin, scl_pin);
+    LOG_DEBUG(5, "[Eeprom] Entering Initialize()...\n");
+    LOG_DEBUG(3, "[Eeprom] Inicijalizacija I2C na SDA=%d, SCL=%d\n", sda_pin, scl_pin);
     Wire.begin(sda_pin, scl_pin);
     
     // Učitaj globalnu konfiguraciju
     if (!ReadConfig(&g_appConfig))
     {
         // Greška pri čitanju I2C (npr. hardverski kvar)
-        Serial.println(F("[EepromStorage] GRESKA: Nije moguce pročitati I2C EEPROM."));
+        LOG_DEBUG(1, "[Eeprom] GRESKA: Nije moguce pročitati I2C EEPROM.\n");
         LoadDefaultConfig(); // Učitaj i snimi defaultne
     }
     else
@@ -80,12 +82,13 @@ void EepromStorage::Initialize(int8_t sda_pin, int8_t scl_pin)
         }
         else
         {
-            Serial.printf("[EepromStorage] Konfiguracija ucitana. RS485 Adresa: 0x%X\r\n", g_appConfig.rs485_iface_addr);
+            LOG_DEBUG(3, "[Eeprom] Konfiguracija ucitana. RS485 Adresa: 0x%X\n", g_appConfig.rs485_iface_addr);
         }
     }
 
-    Serial.println(F("[EepromStorage] Inicijalizacija Logera...\r\n"));
+    LOG_DEBUG(3, "[Eeprom] Inicijalizacija Logera...\n");
     LoggerInit();
+    LOG_DEBUG(5, "[Eeprom] Exiting Initialize().\n");
 }
 
 //=============================================================================
@@ -108,6 +111,7 @@ bool EepromStorage::WriteConfig(const AppConfig* config)
 
 bool EepromStorage::WriteBytes(uint16_t address, const uint8_t* data, uint16_t length)
 {
+    LOG_DEBUG(5, "[Eeprom] Entering WriteBytes(addr=0x%04X, len=%u)...\n", address, length);
     uint16_t current_addr = address;
     uint16_t bytes_remaining = length;
     uint16_t data_offset = 0;
@@ -118,6 +122,7 @@ bool EepromStorage::WriteBytes(uint16_t address, const uint8_t* data, uint16_t l
         uint16_t bytes_to_end_of_page = EEPROM_PAGE_SIZE - page_offset;
         uint16_t chunk_size = min((uint16_t)bytes_remaining, bytes_to_end_of_page);
         
+        LOG_DEBUG(4, "[Eeprom] -> Pisanje chunk-a: addr=0x%04X, size=%u\n", current_addr, chunk_size);
         Wire.beginTransmission(EEPROM_I2C_ADDR);
         Wire.write((uint8_t)(current_addr >> 8));   
         Wire.write((uint8_t)(current_addr & 0xFF)); 
@@ -126,44 +131,81 @@ bool EepromStorage::WriteBytes(uint16_t address, const uint8_t* data, uint16_t l
         
         if (Wire.endTransmission() != 0)
         {
+            LOG_DEBUG(1, "[Eeprom] GRESKA: I2C endTransmission nije uspio.\n");
             return false;
         }
         
-        delay(EEPROM_WRITE_DELAY); 
+        // ISPRAVKA: Zamjena nepouzdanog delay() sa robusnim ACK Polling-om.
+        // Čekamo dok EEPROM ne završi interni ciklus pisanja i ponovo ne odgovori na svoju adresu.
+        // HIBRIDNA ISPRAVKA: Kombinujemo obaveznu pauzu sa ACK Polling-om.
+        // Prvo, dajemo čipu obaveznu pauzu od 5ms koju ste potvrdili da je neophodna.
+        delay(EEPROM_WRITE_DELAY); // EEPROM_WRITE_DELAY je 5ms
+
+        // Zatim, u petlji provjeravamo da li je čip zaista završio sa pisanjem (ACK Polling).
+        // Ovo dodaje sloj robusnosti ako pisanje potraje duže od 5ms.
+        unsigned long poll_start = millis();
+        while (millis() - poll_start < 10) { // Dodatno čekanje do max 10ms (5ms obavezno + 10ms polling)
+            Wire.beginTransmission(EEPROM_I2C_ADDR);
+            if (Wire.endTransmission() == 0) {
+                break; // EEPROM je odgovorio (ACK), spreman je.
+            }
+            delay(1); // Kratka pauza između pokušaja
+        }
 
         current_addr += chunk_size;
         data_offset += chunk_size;
         bytes_remaining -= chunk_size;
     }
     
+    LOG_DEBUG(5, "[Eeprom] Exiting WriteBytes()... OK\n");
     return true;
 }
 
 bool EepromStorage::ReadBytes(uint16_t address, uint8_t* data, uint16_t length)
 {
-    Wire.beginTransmission(EEPROM_I2C_ADDR);
-    Wire.write((uint8_t)(address >> 8));   
-    Wire.write((uint8_t)(address & 0xFF)); 
+    LOG_DEBUG(5, "[Eeprom] Entering CHUNKED ReadBytes(addr=0x%04X, len=%u)...\n", address, length);
     
-    if (Wire.endTransmission(false) != 0) 
-    {
-        return false;
-    }
-    
-    // Rjesava I2C Ambiguity Warning (Wire.requestFrom)
-    if (Wire.requestFrom((uint8_t)EEPROM_I2C_ADDR, (size_t)length) != length)
-    {
-        return false;
-    }
+    uint16_t bytes_remaining = length;
+    uint16_t current_addr = address;
+    uint16_t data_offset = 0;
 
-    for (uint16_t i = 0; i < length; i++)
+    while (bytes_remaining > 0)
     {
-        if (Wire.available())
+        // Definišemo veličinu "komada" za čitanje, npr. 128 bajtova, što je sigurno ispod limita.
+        uint16_t chunk_size = min((uint16_t)bytes_remaining, (uint16_t)128);
+        LOG_DEBUG(4, "[Eeprom] -> Čitanje chunk-a: addr=0x%04X, size=%u\n", current_addr, chunk_size);
+
+        // 1. Postavi adresu sa koje se čita
+        Wire.beginTransmission(EEPROM_I2C_ADDR);
+        Wire.write((uint8_t)(current_addr >> 8));
+        Wire.write((uint8_t)(current_addr & 0xFF));
+        
+        // endTransmission(false) šalje STOP, ali drži konekciju "živom" za čitanje
+        if (Wire.endTransmission(false) != 0)
         {
-            data[i] = Wire.read();
+            LOG_DEBUG(1, "[Eeprom] GRESKA: I2C endTransmission (za čitanje) nije uspio.\n");
+            return false;
         }
+
+        // 2. Zatraži i pročitaj "komad" podataka
+        if (Wire.requestFrom((uint8_t)EEPROM_I2C_ADDR, (size_t)chunk_size) != chunk_size)
+        {
+            LOG_DEBUG(1, "[Eeprom] GRESKA: I2C requestFrom nije vratio očekivani broj bajtova za chunk.\n");
+            return false;
+        }
+
+        for (uint16_t i = 0; i < chunk_size; i++)
+        {
+            data[data_offset + i] = Wire.read();
+        }
+
+        // Ažuriraj pokazivače za sljedeću iteraciju
+        bytes_remaining -= chunk_size;
+        current_addr += chunk_size;
+        data_offset += chunk_size;
     }
     
+    LOG_DEBUG(5, "[Eeprom] Exiting ReadBytes()... OK\n");
     return true;
 }
 
@@ -173,6 +215,7 @@ bool EepromStorage::ReadBytes(uint16_t address, uint8_t* data, uint16_t length)
 
 void EepromStorage::LoggerInit()
 {
+    LOG_DEBUG(5, "[Eeprom] Entering LoggerInit()...\n");
     // Ovdje bi se trebala citati memorija za pronalazenje head/tail,
     // za sada pretpostavljamo default:
     m_log_write_index = 0;
@@ -183,6 +226,7 @@ void EepromStorage::LoggerInit()
 
 LoggerStatus EepromStorage::WriteLog(const LogEntry* entry)
 {
+    LOG_DEBUG(5, "[Eeprom] Entering WriteLog()...\n");
     if (m_log_count >= MAX_LOG_ENTRIES)
     {
         // Puni smo, brisemo najstariji prije upisa
@@ -207,6 +251,7 @@ LoggerStatus EepromStorage::WriteLog(const LogEntry* entry)
 
     if (!WriteBytes(write_addr, write_buffer, LOG_RECORD_SIZE))
     {
+        LOG_DEBUG(1, "[Eeprom] GRESKA: Pisanje loga na adresu 0x%04X nije uspjelo.\n", write_addr);
         return LoggerStatus::LOGGER_ERROR;
     }
 
@@ -214,11 +259,13 @@ LoggerStatus EepromStorage::WriteLog(const LogEntry* entry)
     m_log_write_index = (m_log_write_index + 1) % MAX_LOG_ENTRIES;
     m_log_count++;
 
+    LOG_DEBUG(3, "[Eeprom] Log uspješno zapisan. Ukupno logova: %u\n", m_log_count);
     return LoggerStatus::LOGGER_OK;
 }
 
 LoggerStatus EepromStorage::GetOldestLog(LogEntry* entry)
 {
+    LOG_DEBUG(5, "[Eeprom] Entering GetOldestLog()...\n");
     if (m_log_count == 0)
     {
         return LoggerStatus::LOGGER_EMPTY;
@@ -231,12 +278,14 @@ LoggerStatus EepromStorage::GetOldestLog(LogEntry* entry)
     
     if (!ReadBytes(read_addr, read_buffer, LOG_RECORD_SIZE))
     {
+        LOG_DEBUG(1, "[Eeprom] GRESKA: Čitanje loga sa adrese 0x%04X nije uspjelo.\n", read_addr);
         return LoggerStatus::LOGGER_ERROR;
     }
 
     // Status Byte mora biti VALID
     if (read_buffer[0] != STATUS_BYTE_VALID)
     {
+        LOG_DEBUG(2, "[Eeprom] UPOZORENJE: Status bajt za log na adresi 0x%04X nije validan (0x%02X).\n", read_addr, read_buffer[0]);
         return LoggerStatus::LOGGER_ERROR;
     }
 
@@ -249,11 +298,13 @@ LoggerStatus EepromStorage::GetOldestLog(LogEntry* entry)
         memset(((uint8_t*)entry) + entry_copy_size, 0, sizeof(LogEntry) - entry_copy_size);
     }
 
+    LOG_DEBUG(4, "[Eeprom] Uspješno pročitan najstariji log sa adrese 0x%04X.\n", read_addr);
     return LoggerStatus::LOGGER_OK;
 }
 
 LoggerStatus EepromStorage::DeleteOldestLog()
 {
+    LOG_DEBUG(5, "[Eeprom] Entering DeleteOldestLog()...\n");
     if (m_log_count == 0)
     {
         return LoggerStatus::LOGGER_EMPTY;
@@ -266,6 +317,7 @@ LoggerStatus EepromStorage::DeleteOldestLog()
     
     if (!WriteBytes(status_addr, &empty_byte, 1))
     {
+        LOG_DEBUG(1, "[Eeprom] GRESKA: Brisanje (pisanje 0xFF) status bajta na adresi 0x%04X nije uspjelo.\n", status_addr);
         return LoggerStatus::LOGGER_ERROR;
     }
 
@@ -273,27 +325,44 @@ LoggerStatus EepromStorage::DeleteOldestLog()
     m_log_count--;
 
     return LoggerStatus::LOGGER_OK;
+    LOG_DEBUG(3, "[Eeprom] Najstariji log obrisan. Preostalo logova: %u\n", m_log_count);
 }
 
 // Implementacija WriteAddressList
 bool EepromStorage::WriteAddressList(const uint16_t* listBuffer, uint16_t count)
 {
-    // Pretvaramo count uint16_t elemenata u bajtove
-    uint16_t bytes_to_write = count * sizeof(uint16_t);
+    uint16_t addresses_to_write = min(count, (uint16_t)MAX_ADDRESS_LIST_SIZE);
+    uint16_t bytes_to_write = addresses_to_write * sizeof(uint16_t);
 
-    if (bytes_to_write > EEPROM_ADDRESS_LIST_SIZE) {
-        bytes_to_write = EEPROM_ADDRESS_LIST_SIZE; // Osiguranje od preljeva
-        Serial.println(F("[EepromStorage] Upozorenje: Lista adresa je skraćena zbog ograničenja EEPROM-a."));
+    // 1. Upisujemo validne adrese
+    LOG_DEBUG(3, "[Eeprom] Započinjem upis %u validnih adresa...\n", addresses_to_write);
+    if (!WriteBytes(EEPROM_ADDRESS_LIST_START_ADDR, (const uint8_t*)listBuffer, bytes_to_write))
+    {
+        LOG_DEBUG(1, "[Eeprom] GRESKA: Pisanje liste adresa neuspješno.\n");
+        return false;
     }
     
-    // Upisujemo bajtove u EEPROM na definisanoj početnoj adresi
-    if (WriteBytes(EEPROM_ADDRESS_LIST_START_ADDR, (const uint8_t*)listBuffer, bytes_to_write))
+    // 2. KONAČNA ISPRAVKA: Eksplicitno nuliramo ostatak memorije za listu.
+    // Ovo osigurava da će ReadAddressList uvijek pronaći ispravan kraj.
+    uint16_t remaining_bytes = EEPROM_ADDRESS_LIST_SIZE - bytes_to_write;
+    if (remaining_bytes > 0)
     {
-        Serial.printf("[EepromStorage] Uspješno zapisano %u adresa (%u B).\n", count, bytes_to_write);
-        return true;
+        LOG_DEBUG(3, "[Eeprom] Čistim ostatak (%u B) memorije za listu adresa...\n", remaining_bytes);
+        uint8_t zero_buffer[16] = {0}; // Bafer sa nulama
+        
+        // Upisujemo nule u ostatak prostora, u komadima
+        for (uint16_t offset = 0; offset < remaining_bytes; offset += sizeof(zero_buffer)) {
+            uint16_t clear_address = EEPROM_ADDRESS_LIST_START_ADDR + bytes_to_write + offset;
+            uint16_t chunk_to_clear = min((uint16_t)sizeof(zero_buffer), (uint16_t)(remaining_bytes - offset));
+            if (!WriteBytes(clear_address, zero_buffer, chunk_to_clear)) {
+                 LOG_DEBUG(1, "[Eeprom] GRESKA: Čišćenje ostatka liste adresa neuspješno.\n");
+                 return false;
+            }
+        }
     }
-    Serial.println(F("[EepromStorage] GREŠKA: Pisanje liste adresa neuspješno."));
-    return false;
+
+    LOG_DEBUG(3, "[Eeprom] Upis i čišćenje liste adresa uspješno završeno.\n");
+    return true;
 }
 
 bool EepromStorage::ReadAddressList(uint16_t* listBuffer, uint16_t maxCount, uint16_t* actualCount)
@@ -302,7 +371,20 @@ bool EepromStorage::ReadAddressList(uint16_t* listBuffer, uint16_t maxCount, uin
     
     if (ReadBytes(EEPROM_ADDRESS_LIST_START_ADDR, (uint8_t*)listBuffer, bytes_to_read))
     {
-        *actualCount = bytes_to_read / sizeof(uint16_t);
+        // ISPRAVKA: Nakon čitanja bloka, prebroj validne (ne-nula) adrese.
+        uint16_t valid_count = 0;
+        for (uint16_t i = 0; i < (bytes_to_read / sizeof(uint16_t)); i++)
+        {
+            if (listBuffer[i] == 0)
+            {
+                // Stani kod prve nule, to je kraj liste.
+                break;
+            }
+            valid_count++;
+        }
+        *actualCount = valid_count;
+
+        LOG_DEBUG(3, "[Eeprom] Uspješno pročitan blok od %u B. Pronađeno %u validnih adresa.\n", bytes_to_read, *actualCount);
         return true;
     }
     *actualCount = 0;
@@ -314,7 +396,7 @@ bool EepromStorage::ReadAddressList(uint16_t* listBuffer, uint16_t maxCount, uin
 // ============================================================================
 LoggerStatus EepromStorage::ClearAllLogs()
 {
-    Serial.println(F("[EepromStorage] Brisanje svih logova..."));
+    LOG_DEBUG(3, "[Eeprom] Brisanje svih logova...\n");
 
     // Pripremi buffer sa 0xFF (STATUS_BYTE_EMPTY)
     uint8_t empty_buffer[EEPROM_PAGE_SIZE];
@@ -332,7 +414,7 @@ LoggerStatus EepromStorage::ClearAllLogs()
         
         if (!WriteBytes(current_address, empty_buffer, chunk_size))
         {
-            Serial.println(F("[EepromStorage] GRESKA pri brisanju logova."));
+            LOG_DEBUG(1, "[Eeprom] GRESKA pri brisanju logova na adresi 0x%04X.\n", current_address);
             return LoggerStatus::LOGGER_ERROR;
         }
         
@@ -345,6 +427,6 @@ LoggerStatus EepromStorage::ClearAllLogs()
     m_log_read_index = 0;
     m_log_count = 0;
 
-    Serial.println(F("[EepromStorage] Svi logovi obrisani."));
+    LOG_DEBUG(3, "[Eeprom] Svi logovi obrisani.\n");
     return LoggerStatus::LOGGER_OK;
 }

@@ -97,7 +97,7 @@ struct UpdateSession
 };
 
 
-class UpdateManager : public IRs485Manager
+class UpdateManager
 {
 public:
     UpdateManager();
@@ -117,13 +117,10 @@ public:
      */
     void StartImageUpdateSequence(uint16_t first_addr, uint16_t last_addr, uint8_t first_img, uint8_t last_img);
 
-    // Implementacija IRs485Manager interfejsa
-    void Service() override;
-    void ProcessResponse(uint8_t* packet, uint16_t length) override;
-    void OnTimeout() override;
-    const char* Name() const override { return "UpdateManager"; }
-    bool WantsBus() override;
-    uint32_t GetTimeoutMs() const override;
+    // Glavna funkcija koju poziva state-mašina
+    void Run();
+    bool IsActive();
+    bool was_interrupted; // Flag za nastavak
 
 public:
     // Podržavamo samo jednu sesiju odjednom
@@ -132,11 +129,15 @@ public:
     ImageUpdateSequence m_sequence; // NOVO: Stanje sekvence
 
 private:
+    void ProcessResponse(const uint8_t* packet, uint16_t length);
+    void OnTimeout();
+
+
     void SendStartRequest();
     void SendDataPacket();
     void SendFinishRequest();
     void SendRestartCommand();
-    void CleanupSession();
+    void CleanupSession(bool failed = false);
     
     // REFAKTORISANA: Određuje ime fajla, otvara ga i čita metadatu
     bool PrepareSession(UpdateSession* s, uint8_t updateCmd); 

@@ -18,8 +18,8 @@
 // #define RS485_TX_PIN        33  // (P0 Pin 10: IO33)
 // #define RS485_DE_PIN        12  // (P0 Pin 9: IO12) // PROBLEM: GPIO12 je "strapping pin" i ometa upload!
 
-#define RS485_TX_PIN        12  // (P0 Pin 9: IO12) - Koristimo GPIO12 za TX.
-#define RS485_DE_PIN        33  // (P0 Pin 10: IO33) - Koristimo GPIO33 za DE, jer nema "strapping" funkciju.
+#define RS485_TX_PIN        33  // (P0 Pin 10: IO33) - Koristimo GPIO33za TX.
+#define RS485_DE_PIN        12  // (P0 Pin 9: IO12) - Koristimo GPIO12za DE, jer nema "strapping" funkciju.
 
 // --- I2C INTERFEJS (EEPROM) - Pinovi na P0 konektoru ---
 // PREMJEŠTENO: Koriste se slobodni I/O pinovi koji nisu "strapping" ili input-only

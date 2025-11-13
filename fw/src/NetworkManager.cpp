@@ -180,15 +180,8 @@ void NetworkManager::RunTask()
     // ========================================================================
     LOG_DEBUG(3, "[NetworkManager] Pokretanje sistemskih servisa...\n");
 
-    // 1. Inicijalizuj i pokreni RS485
-    LOG_DEBUG(5, "[NetworkManager] -> Inicijalizacija i pokretanje Rs485Service...\n");
-    g_rs485Service.Initialize(
-        &g_httpQueryManager,
-        &g_updateManager,
-        &g_logPullManager,
-        &g_timeSync
-    );
-    g_rs485Service.StartTask();
+    // 1. RS485 se već inicijalizuje u setup() funkciji.
+    // Ovdje ne radimo ništa po tom pitanju.
 
     // 2. Pokreni HTTP Server ako smo povezani na mrežu
     if (IsNetworkConnected()) {

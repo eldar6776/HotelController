@@ -16,21 +16,15 @@
 #include "Rs485Service.h"
 #include "EepromStorage.h"
 
-class LogPullManager : public IRs485Manager
+class LogPullManager
 {
 public:
     LogPullManager();
     void Initialize(Rs485Service* pRs485Service, EepromStorage* pEepromStorage);
-
-    // Implementacija IRs485Manager interfejsa
-    virtual void Service() override;
-    virtual void ProcessResponse(uint8_t* packet, uint16_t length) override;
-    virtual void OnTimeout() override;
-    bool WantsBus() override;
-    const char* Name() const override;
-    uint32_t GetTimeoutMs() const override;
+    void Run();
 
 private:
+    void ProcessResponse(uint8_t* packet, uint16_t length);
     void SendStatusRequest(uint16_t address);
     void SendLogRequest(uint16_t address);
     uint16_t GetNextAddress();

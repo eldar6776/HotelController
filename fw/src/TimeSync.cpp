@@ -7,6 +7,7 @@
  */
 
 #include "TimeSync.h"
+#include "DebugConfig.h"
 #include "ProjectConfig.h"
 #include <time.h> // Za time() i tm strukturu
 
@@ -40,21 +41,17 @@ void TimeSync::Initialize(Rs485Service* pRs485Service)
 }
 
 /**
- * @brief Poziva se od strane Rs485Service dispecera kada je nas red.
+ * @brief Glavna funkcija koju poziva state-mašina.
  */
-void TimeSync::Service()
+void TimeSync::Run()
 {
-    if (WantsBus())
+    if (IsTimeToSync())
     {
         SendTimeBroadcast();
     }
-    else
-    {
-        // Jos nije vrijeme, oslobodi magistralu
-        // Ovo se ne bi smjelo desiti ako WantsBus() radi ispravno, ali kao osiguranje.
-        m_rs485_service->ReleaseBusAccess(this);
-    }
 }
+
+
 
 /**
  * @brief Salje SET_RTC_DATE_TIME broadcast paket. (Replicira HC_CreateTimeUpdatePacket)
@@ -62,7 +59,7 @@ void TimeSync::Service()
 void TimeSync::SendTimeBroadcast()
 {
     m_last_sync_time = millis(); // Resetuj tajmer tek kada stvarno šaljemo
-    Serial.println(F("[TimeSync] Slanje broadcast vremena..."));
+    LOG_DEBUG(3, "[TimeSync] Slanje broadcast vremena...\n");
     
     uint8_t packet[RTC_PACKET_LENGTH];
     uint16_t rsbra = g_appConfig.rs485_bcast_addr; // Broadcast adresa iz konfiguracije
@@ -106,46 +103,13 @@ void TimeSync::SendTimeBroadcast()
 
     // Slanje paketa (Broadcast ne očekuje odgovor, ali Rs485Service čeka timeout)
     m_rs485_service->SendPacket(packet, RTC_PACKET_LENGTH);
-    
-    // Broadcast je poslat; odmah oslobodi magistralu.
-    m_rs485_service->ReleaseBusAccess(this);
 }
 
 /**
- * @brief Broadcast ne ocekuje odgovor.
- */
-void TimeSync::ProcessResponse(uint8_t* packet, uint16_t length)
-{
-    // Ignorise se
-    (void)packet;
-    (void)length;
-}
-
-/**
- * @brief Broadcast ne ocekuje odgovor, tako da je i timeout ignorisan.
- */
-void TimeSync::OnTimeout()
-{
-    // Timeout je očekivan za broadcast. Samo oslobodi magistralu.
-    m_rs485_service->ReleaseBusAccess(this);
-}
-
-/**
- * @brief Signalizira da li TimeSync želi da koristi magistralu.
+ * @brief Provjerava da li je vrijeme za slanje broadcast-a.
  * @return true ako je vrijeme za slanje broadcast-a, u suprotnom false.
  */
-bool TimeSync::WantsBus()
+bool TimeSync::IsTimeToSync()
 {
     return (millis() - m_last_sync_time > TIME_BROADCAST_INTERVAL_MS);
-}
-
-const char* TimeSync::Name() const
-{
-    return "TimeSync";
-}
-
-uint32_t TimeSync::GetTimeoutMs() const
-{
-    // Broadcast ne čeka odgovor, stoga je timeout minimalan.
-    return 1; 
 }

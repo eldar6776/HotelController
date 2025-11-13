@@ -23,13 +23,7 @@ extern AppConfig g_appConfig;
 #define HTTP_QUERY_TIMEOUT_MS 50
 
 HttpQueryManager::HttpQueryManager() :
-    m_rs485_service(NULL),
-    m_pending_cmd(NULL),
-    m_response_buffer_ptr(NULL),
-    m_query_result(false),
-    m_retry_count(0), // NOVO: Inicijalizacija brojača
-    m_query_mutex(NULL),
-    m_response_semaphore(NULL)
+    m_rs485_service(NULL)
 {
     // Konstruktor
 }
@@ -37,9 +31,6 @@ HttpQueryManager::HttpQueryManager() :
 void HttpQueryManager::Initialize(Rs485Service* pRs485Service)
 {
     m_rs485_service = pRs485Service;
-    
-    m_query_mutex = xSemaphoreCreateMutex();
-    m_response_semaphore = xSemaphoreCreateBinary();
 }
 
 /**
@@ -220,182 +211,55 @@ uint16_t HttpQueryManager::CreateRs485Packet(HttpCommand* cmd, uint8_t* buffer)
  * @brief BLOKIRAJUCA funkcija. Ceka dok RS485 ne zavrsi.
  */
 bool HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBuffer)
-{
-    if (xSemaphoreTake(m_query_mutex, pdMS_TO_TICKS(100)) == pdFALSE)
+{    
+    LOG_DEBUG(4, "[HttpQuery] Primljen zahtev za komandu 0x%X na adresu 0x%X\n", cmd->cmd_id, cmd->address);
+
+    uint8_t packet[MAX_PACKET_LENGTH];
+    uint16_t length = CreateRs485Packet(cmd, packet);
+
+    // Odmah zauzmi magistralu i pošalji
+    if (!m_rs485_service->SendPacket(packet, length))
     {
-        Serial.println(F("[HttpQueryManager] Mutex zauzet, HTTP upit odbijen."));
+        LOG_DEBUG(1, "[HttpQuery] GRESKA: SendPacket nije uspio.\n");
         return false;
     }
 
-    LOG_DEBUG(4, "[HttpQuery] Primljen zahtev za komandu 0x%X na adresu 0x%X\n", cmd->cmd_id, cmd->address);
+    // Čekaj odgovor
+    int response_len = m_rs485_service->ReceivePacket(responseBuffer, MAX_PACKET_LENGTH, HTTP_QUERY_TIMEOUT_MS);
 
-    m_pending_cmd = cmd;
-    m_response_buffer_ptr = responseBuffer;
-    m_query_result = false;
-    m_retry_count = 0; // NOVO: Resetuj brojač na početku svakog upita
-
-    // Resetuj semafore (za svaki slucaj ako su ostali 'dati' od ranije)
-    xSemaphoreTake(m_response_semaphore, 0); 
-
-    bool response_received = false;
-
-    // KORAK 1: Signaliziraj da želimo magistralu.
-    // Dispečer će ovo vidjeti preko WantsBus() i prekinuti LogPullManager.
-    // Dispečer će pozvati naš Service() metod kada dobijemo pristup.
-    // Ovde samo čekamo da se cela transakcija završi.
-    
-    // KORAK 2: Čekaj da se transakcija završi (uspehom ili neuspehom)
-    // Ukupni timeout mora biti veći od svih mogućih retry-a + margine
-    // (MAX_RS485_RETRIES * RS485_RESP_TOUT_MS) + margina
-    // Primer: (3 * 45ms) + 200ms = 335ms. Koristimo malo veći timeout.
-    const TickType_t total_wait_ticks = pdMS_TO_TICKS( (MAX_RS485_RETRIES * RS485_RESP_TOUT_MS) + 200 );
-    if (xSemaphoreTake(m_response_semaphore, total_wait_ticks) == pdTRUE)
+    if (response_len > 0)
     {
-        response_received = true; 
-    }
-
-    if (!response_received)
-    {
-        LOG_DEBUG(2, "[HttpQuery] TIMEOUT. Nije primljen odgovor na komandu.\n");
-        LOG_DEBUG(1, "[HttpQuery] HTTP Blokirajuci upit istekao (timeout)!\n");
-        m_query_result = false;
-        // KRITIČNO: Ako je semafor istekao, moramo nasilno osloboditi magistralu!
-        // Ovo sprečava zaključavanje ako se desi neka nepredviđena greška.
-        // Iako Bus Watchdog ovo rešava, dobro je imati i ovde osiguranje.
-        m_rs485_service->ReleaseBusAccess(this);
-    }    
-    
-    xSemaphoreGive(m_query_mutex); // Otključaj mutex za sledeći HTTP zahtev
-    LOG_DEBUG(4, "[HttpQuery] Završen. Rezultat: %s\n", m_query_result ? "USPEH" : "NEUSPEH");
-    return m_query_result;
-}
-
-
-/**
- * @brief Poziva se od strane Rs485Service dispecera kada je nas red.
- */
-void HttpQueryManager::Service()
-{
-    // Proveri da li smo dobili magistralu i da li imamo komandu
-    if (m_pending_cmd != NULL && m_rs485_service->GetCurrentBusOwner() == this)
-    {
-        // Ako je ovo prvi pokušaj (retry_count == 0), pošalji paket.
-        // U suprotnom, OnTimeout() će se pobrinuti za ponovno slanje.
-        if (m_retry_count == 0) {
-            uint8_t packet[MAX_PACKET_LENGTH]; 
-            uint16_t length = CreateRs485Packet(m_pending_cmd, packet);
-            
-            if (!m_rs485_service->SendPacket(packet, length))
-            {
-                // KRITIČNA ISPRAVKA: Ako slanje ne uspije, moramo osloboditi magistralu i odblokirati HTTP zahtjev.
-                LOG_DEBUG(1, "[HttpQuery] GRESKA: SendPacket nije uspio. Prekidam upit.\n");
-                m_query_result = false;
-                m_pending_cmd = NULL; // Obriši zahtjev
-                m_rs485_service->ReleaseBusAccess(this); // Oslobodi magistralu
-                xSemaphoreGive(m_response_semaphore); // Odblokiraj ExecuteBlockingQuery
-            }
-        }
-    }
-    else
-    {
-        // Ako smo pozvani, a nemamo komandu, odmah oslobodi magistralu.
-        m_rs485_service->ReleaseBusAccess(this);
-    }
-}
-
-/**
- * @brief Callback - Stigao je odgovor.
- */
-void HttpQueryManager::ProcessResponse(uint8_t* packet, uint16_t length)
-{
-    m_retry_count = 0; // Resetuj brojač nakon uspešnog odgovora
-    LOG_DEBUG(4, "[HttpQuery] Primljen odgovor. Dužina: %d\n", length);
-    if (m_response_buffer_ptr != NULL)
-    {
-        // =================================================================================
-        // KLJUČNA ISPRAVKA: Implementacija parsiranja identična originalnom kodu.
-        // memcpy(pcInsert, &rx_buff[7], rx_buff[5]-2U);
-        // =================================================================================
-        if (length >= 9) // Minimalna dužina paketa
+        LOG_DEBUG(4, "[HttpQuery] Primljen odgovor. Dužina: %d\n", response_len);
+        // Parsiranje odgovora
+        if (response_len >= 9)
         {
-            uint16_t data_field_len = packet[5];
-            if (data_field_len >= 2 && (data_field_len + 7) <= length)
+            uint16_t data_field_len = responseBuffer[5];
+            if (data_field_len >= 2 && (data_field_len + 7) <= response_len)
             {
                 uint16_t payload_len = data_field_len - 2; // Tačna logika iz starog koda
-                memcpy(m_response_buffer_ptr, &packet[7], payload_len);
-                m_response_buffer_ptr[payload_len] = '\0'; // Osiguraj null-terminator
+                // Premjestimo payload na početak bafera za pozivaoca
+                memmove(responseBuffer, &responseBuffer[7], payload_len);
+                responseBuffer[payload_len] = '\0'; // Osiguraj null-terminator
             }
             else
             {
-                // Ako je odgovor samo ACK bez payload-a
-                strcpy((char*)m_response_buffer_ptr, "OK");
+                strcpy((char*)responseBuffer, "OK");
             }
         }
         else
         {
-            // Ako je paket neispravan ili prekratak
-            strcpy((char*)m_response_buffer_ptr, "ERROR");
+            strcpy((char*)responseBuffer, "ERROR");
         }
-        m_query_result = true;
+        return true;
     }
-    
-    // =================================================================================
-    // KONAČNO REŠENJE: Pravilan redosled oslobađanja resursa.
-    // 1. Resetuj stanje (da WantsBus() vrati false).
-    // 2. Odblokiraj HTTP server.
-    // 3. Tek na kraju oslobodi magistralu.
-    // =================================================================================
-    m_pending_cmd = NULL;
-    xSemaphoreGive(m_response_semaphore); // Obavijesti ExecuteBlockingQuery da je posao gotov
-    m_rs485_service->ReleaseBusAccess(this);
-}
-
-/**
- * @brief Callback - Uredjaj nije odgovorio.
- */
-void HttpQueryManager::OnTimeout()
-{
-    m_retry_count++;
-    LOG_DEBUG(2, "[HttpQuery] Timeout. Pokušaj %d od %d...\n", m_retry_count, MAX_RS485_RETRIES);
-
-    if (m_retry_count >= MAX_RS485_RETRIES)
+    else if (response_len == 0)
     {
-        LOG_DEBUG(2, "[HttpQuery] Dostignut maksimalan broj pokušaja. Odustajem.\n");
-        m_query_result = false;
-        // KONAČNO REŠENJE: Pravilan redosled i ovde.
-        m_pending_cmd = NULL;
-        xSemaphoreGive(m_response_semaphore); // Odblokiraj ExecuteBlockingQuery sa rezultatom 'false'
-        m_rs485_service->ReleaseBusAccess(this); // Oslobodi magistralu nakon neuspjeha
+        LOG_DEBUG(2, "[HttpQuery] TIMEOUT. Nije primljen odgovor na komandu.\n");
+        return false;
     }
-    else
+    else // response_len < 0
     {
-        // Ponovo pošalji isti paket
-        uint8_t packet[MAX_PACKET_LENGTH];
-        uint16_t length = CreateRs485Packet(m_pending_cmd, packet);
-        if (!m_rs485_service->SendPacket(packet, length))
-        {
-            LOG_DEBUG(1, "[HttpQuery] GRESKA: Ponovno slanje paketa nije uspjelo. Prekidam upit.\n");
-            m_query_result = false;
-            xSemaphoreGive(m_response_semaphore); // Odblokiraj HTTP sa greškom
-        }
+        LOG_DEBUG(1, "[HttpQuery] GRESKA: Prijemni bafer je pun (overflow).\n");
+        return false;
     }
-}
-
-/**
- * @brief NOVO: Signalizira da HttpQueryManager ima hitan posao.
- * @return true ako postoji komanda na čekanju, u suprotnom false.
- */
-bool HttpQueryManager::WantsBus()
-{
-    return (m_pending_cmd != NULL);
-}
-
-const char* HttpQueryManager::Name() const
-{
-    return "HttpQueryManager";
-}
-
-uint32_t HttpQueryManager::GetTimeoutMs() const
-{
-    return HTTP_QUERY_TIMEOUT_MS;
 }

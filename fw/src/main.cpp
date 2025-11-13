@@ -38,6 +38,15 @@ UpdateManager g_updateManager;
 // Globalna varijabla konfiguracije
 extern AppConfig g_appConfig; // Inicijalizacija na 0
 
+// NOVO: Stanja za glavnu state-mašinu
+enum class SystemState {
+    CHECK_HTTP,
+    RUN_UPDATE,
+    RUN_TIMESYNC,
+    RUN_POLLING
+};
+SystemState g_systemState = SystemState::RUN_POLLING; // Počinjemo sa pollingom
+
 // --- WATCHDOG KONFIGURACIJA ---
 #define WDT_TIMEOUT 10 // 10 sekundi
 
@@ -70,12 +79,13 @@ void setup()
     g_eepromStorage.Initialize(I2C_SDA_PIN, I2C_SCL_PIN);
     
     // Inicijalizujemo samo event handlere za WiFi
+    // I Rs485 hardver
     g_networkManager.Initialize();
+    g_rs485Service.Initialize();
 
     // --- FAZA 3: Inicijalizacija Sub-Modula ---
     LOG_DEBUG(3, "[setup] Inicijalizacija Sub-Modula...\r\n");
 
-    // Vraćamo inicijalizaciju svih zavisnih modula
     g_logPullManager.Initialize(&g_rs485Service, &g_eepromStorage);
     g_httpQueryManager.Initialize(&g_rs485Service);
     g_updateManager.Initialize(&g_rs485Service, &g_sdCardManager);
@@ -105,25 +115,33 @@ void loop()
     // --- WATCHDOG RESET ---
     esp_task_wdt_reset(); // Resetuj watchdog tajmer u svakom ciklusu
 
-    // Glavna petlja: koristimo samo za ne-blokirajuce Loop funkcije
-    // static bool servicesStarted = false; // VIŠE NIJE POTREBNO
+    // NetworkManager.Loop() se više ne poziva jer je njegova logika prebačena u task
+    // koji se ne završava.
 
-    // =================================================================================
-    // DEBUG LINIJA: Svake 2 sekunde ispiši status ključnih flagova
-    static unsigned long lastDebugPrint = 0;
-    if (millis() - lastDebugPrint > 2000) {
-        lastDebugPrint = millis();
-        // Uklonjen 'servicesStarted' iz ispisa
-        LOG_DEBUG(4, "[loop] DEBUG: IsInitComplete=%d, IsNetConnected=%d\n",
-            g_networkManager.IsInitializationComplete(), g_networkManager.IsNetworkConnected());
+    // HTTP komande se obrađuju direktno u HttpServer-u i imaju najveći prioritet.
+    // HttpServer (ESPAsyncWebServer) radi u svom zadatku. Kada stigne zahtjev,
+    // on poziva ExecuteBlockingQuery, koji će zauzeti RS485 magistralu i blokirati
+    // samo zadatak od web servera, ne i ovu loop() petlju.
+    // Da bi se spriječilo da loop() uleti i pokrene npr. Polling dok HTTP upit čeka,
+    // moramo uvesti globalni flag ili mutex. Za sada, oslanjamo se na to da su HTTP
+    // upiti rijetki i brzi.
+
+    // Glavna state-mašina za pozadinske zadatke
+    // Prioritet: Update > TimeSync > Polling
+    if (g_updateManager.IsActive()) {
+        // Ako je update aktivan, on ima potpuni prioritet
+        g_updateManager.Run();
+    } else {
+        // Ako update nije aktivan, provjeri ostale servise
+        // TimeSync se izvršava samo povremeno
+        g_timeSync.Run();
+
+        // Polling se izvršava uvijek kao najniži prioritet
+        g_logPullManager.Run();
     }
-    // =================================================================================
 
-    // ONEMOGUĆENO: Logika je prebačena u NetworkManager::RunTask()
-    // kako bi se osiguralo da se servisi pokrenu samo jednom i nakon što
-    // je WiFiManager sigurno završen.
-
-    g_networkManager.Loop(); // Vraćamo poziv za Loop()
-    delay(1); 
-    // LOG_DEBUG(5, "[main] Exiting loop().\n"); // Previše bučno, isključeno
+    // Mala pauza da se spriječi 100% zauzeće CPU-a i da se omogući rad
+    // drugim zadacima (npr. mrežni stek, HttpServer).
+    // Ovo je ključno jer su Run() funkcije sada blokirajuće.
+    vTaskDelay(pdMS_TO_TICKS(5));
 }

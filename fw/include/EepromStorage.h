@@ -39,7 +39,7 @@ struct LogEntry
     uint8_t  log_type;
     uint8_t  rf_card_id[4];
     uint32_t timestamp; // Unix vrijeme
-    uint8_t  reserved[1];
+    uint8_t  reserved[2]; // ISPRAVKA: Povećano na 2 da struktura bude 16 bajtova
 };
 
 enum class LoggerStatus

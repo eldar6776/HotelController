@@ -69,7 +69,7 @@
 
 // --- Polling i Logovanje ---
 #define MAX_ADDRESS_LIST_SIZE       500
-#define LOG_ENTRY_SIZE              20
+#define LOG_ENTRY_SIZE              16 // ISPRAVKA: Usklađeno sa starim sistemom (LOG_DSIZE)
 #define MAX_LOG_ENTRIES             512
 #define STATUS_BYTE_VALID           0x55
 #define STATUS_BYTE_EMPTY           0xFF

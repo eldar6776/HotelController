@@ -20,6 +20,9 @@ extern AppConfig g_appConfig;
 #define GET_SYS_STAT        0xA0 // CMD za Status Kontrolera (Polling)
 #define GET_LOG_LIST        0xA3 // CMD za Dohvat Loga (Log Pull)
 
+// Definicija tajminga iz starog projekta (common.h)
+#define RX2TX_DEL_MS 3 // Originalna vrednost: RX2TX_DEL (3U)
+
 
 LogPullManager::LogPullManager() :
     m_rs485_service(NULL),
@@ -28,7 +31,8 @@ LogPullManager::LogPullManager() :
     m_current_address_index(0),
     m_current_pull_address(0),
     m_address_list_count(0),
-    m_retry_count(0) // NOVO: Inicijalizacija brojača
+    m_retry_count(0),
+    m_last_activity_time(0)
 {
     // Konstruktor
 }
@@ -59,25 +63,56 @@ void LogPullManager::Initialize(Rs485Service* pRs485Service, EepromStorage* pEep
  */
 void LogPullManager::Run()
 {
-    if (m_address_list_count == 0)
+    // KORAK 1: Provjera da li je prošla obavezna pauza (RX2TX_DEL)
+    if (millis() - m_last_activity_time < RX2TX_DEL_MS)
     {
-        // Prazna lista, ne radimo ništa.
-        vTaskDelay(pdMS_TO_TICKS(100)); // Mala pauza da ne opteretimo CPU
+        return; // Još nije prošlo 3ms, ne radi ništa, izađi odmah.
+    }
+
+    // KORAK 2: Ako čekamo odgovor, provjeri da li je stigao.
+    if (m_state == PullState::WAITING_FOR_RESPONSE)
+    {
+        uint8_t response_buffer[MAX_PACKET_LENGTH];
+        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, RS485_RESP_TOUT_MS);
+
+        if (response_len > 0) {
+            // Imamo odgovor, obradi ga i promijeni stanje.
+            ProcessResponse(response_buffer, response_len);
+        } else {
+            // Timeout. Vrati se u IDLE stanje i pripremi za sljedeću adresu.
+            LOG_DEBUG(4, "[LogPull] Timeout za adresu 0x%X. Prelazim na sljedeću.\n", m_current_pull_address);
+            m_state = PullState::IDLE;
+            m_last_activity_time = millis(); // Zabilježi vrijeme neuspjeha
+        }
         return;
     }
     
-    // Uzmi sljedecu adresu i posalji upit za status (Polling)
-    m_current_pull_address = GetNextAddress();
-    m_retry_count = 0; 
+    // KORAK 3: Ako smo slobodni (IDLE), započni novi ciklus anketiranja.
+    if (m_state == PullState::IDLE)
+    {
+        if (m_address_list_count == 0) {
+            vTaskDelay(pdMS_TO_TICKS(100)); // Nema adresa, pauziraj.
+            return;
+        }
+        
+        m_current_pull_address = GetNextAddress();
+        m_retry_count = 0; 
+        m_state = PullState::SENDING_STATUS_REQUEST; // Pripremi se za slanje statusnog upita.
+    }
 
-    SendStatusRequest(m_current_pull_address);
-
-    uint8_t response_buffer[MAX_PACKET_LENGTH];
-    int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, RS485_RESP_TOUT_MS);
-
-    if (response_len > 0) {
-        ProcessResponse(response_buffer, response_len);
-    } // Ako je timeout, ne radimo ništa, samo prelazimo na sljedeću adresu u idućem pozivu Run()
+    // KORAK 4: Izvrši akciju slanja (ako je stanje postavljeno u prethodnom koraku).
+    // Ove funkcije samo pošalju paket i odmah se završe.
+    switch (m_state)
+    {
+        case PullState::SENDING_STATUS_REQUEST:
+            SendStatusRequest(m_current_pull_address);
+            break;
+        case PullState::SENDING_LOG_REQUEST:
+            SendLogRequest(m_current_pull_address);
+            break;
+        default:
+            break;
+    }
 }
 
 /**
@@ -131,7 +166,7 @@ void LogPullManager::SendStatusRequest(uint16_t address)
     
     if (m_rs485_service->SendPacket(packet, 10))
     {
-        m_state = PullState::WAITING_FOR_STATUS_ACK;
+        m_state = PullState::WAITING_FOR_RESPONSE;
     }
 }
 
@@ -164,7 +199,7 @@ void LogPullManager::SendLogRequest(uint16_t address)
     
     if (m_rs485_service->SendPacket(packet, 10))
     {
-        m_state = PullState::WAITING_FOR_LOG_ACK;
+        m_state = PullState::WAITING_FOR_RESPONSE;
     }
 }
 
@@ -175,48 +210,68 @@ void LogPullManager::SendLogRequest(uint16_t address)
 void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
 {
     uint8_t response_cmd = packet[6];
+    uint16_t sender_addr = (packet[3] << 8) | packet[4]; // Adresa uređaja koji je poslao odgovor
+
+    // ========================================================================
+    // --- KLJUČNA ISPRAVKA I DEBUG LOG ---
+    // ========================================================================
+    LOG_DEBUG(4, "[LogPull] Primljen paket od 0x%X (očekujem od 0x%X). CMD: 0x%02X, Dužina: %d\n", 
+              sender_addr, m_current_pull_address, response_cmd, length);
+
+    // Striktna provjera: Da li je ovo odgovor od uređaja koji smo pitali?
+    if (sender_addr != m_current_pull_address) {
+        LOG_DEBUG(4, "[LogPull] -> ODBACUJEM. Paket nije od očekivanog uređaja.\n");
+        m_state = PullState::IDLE;
+        m_last_activity_time = millis();
+        return;
+    }
+
+    // ========================================================================
+    // --- NOVI DEBUG LOG: Ispis sadržaja primljenog paketa ---
+    // ========================================================================
+    char payload_str[128] = {0};
+    for (int i = 0; i < min((int)length - 9, 40); i++) { // Ispisujemo do 40 bajtova payload-a
+        sprintf(payload_str + strlen(payload_str), "%02X ", packet[i + 7]);
+    }
+    LOG_DEBUG(3, "[LogPull] -> Odgovor od 0x%X: [ %s]\n", sender_addr, payload_str);
     
-    if (m_state == PullState::WAITING_FOR_STATUS_ACK)
+    // Obrada odgovora na GET_SYS_STAT (0xA0)
+    if (response_cmd == GET_SYS_STAT)
     {
-        if (response_cmd == GET_SYS_STAT)
+        // Provjera "Log Pending" flaga (prema izvještaju, bajtovi 7 i 8).
+        if (packet[7] == '1' || (length > 8 && packet[8] == '1'))
         {
-            uint8_t log_pending_flag = packet[7]; 
+            LOG_DEBUG(3, "[LogPull] Uređaj 0x%X ima log. Pripremam zahtjev...\n", m_current_pull_address);
+            m_state = PullState::SENDING_LOG_REQUEST; // Postavi stanje za slanje zahtjeva za logom u sljedećem ciklusu.
+            return; // Izađi i čekaj sljedeći `Run()` poziv (nakon RX2TX_DEL pauze).
+        }
+        else {
+             LOG_DEBUG(4, "[LogPull] Uređaj 0x%X nema logova.\n", m_current_pull_address);
+        }
+    }
+    // Obrada odgovora na GET_LOG_LIST (0xA3)
+    else if (response_cmd == GET_LOG_LIST)
+    {
+        uint16_t data_len = packet[5];
+        if (data_len >= (LOG_ENTRY_SIZE + 2)) // Provjera da li paket sadrži kompletan log
+        {
+            LOG_DEBUG(3, "[LogPull] Primljen LOG sa adrese 0x%X\n", m_current_pull_address);
+            LogEntry newLog; 
+            memcpy((uint8_t*)&newLog, &packet[7], LOG_ENTRY_SIZE); // Koristi ispravnu veličinu
             
-            LOG_DEBUG(4, "[LogPull] Primljen odgovor na STAT sa adrese 0x%X. Log pending: %d\n", m_current_pull_address, log_pending_flag);
-
-            if (log_pending_flag > 0) // Ako postoji pending log
+            if (m_eeprom_storage->WriteLog(&newLog) == LoggerStatus::LOGGER_OK)
             {
-                SendLogRequest(m_current_pull_address);
-                
-                // Čekaj odgovor na log request
-                uint8_t log_response_buffer[MAX_PACKET_LENGTH];
-                int log_response_len = m_rs485_service->ReceivePacket(log_response_buffer, MAX_PACKET_LENGTH, RS485_RESP_TOUT_MS);
-                if (log_response_len > 0) {
-                    // Proslijedi odgovor na obradu (rekurzivni poziv sa promijenjenim stanjem)
-                    ProcessResponse(log_response_buffer, log_response_len);
-                }
+                LOG_DEBUG(3, "[LogPull] -> Upisan log ID: %u sa kontrolera 0x%X\n", newLog.log_id, m_current_pull_address);
             }
-        }
-    }
-    else if (m_state == PullState::WAITING_FOR_LOG_ACK)
-    {
-        if (response_cmd == GET_LOG_LIST)
-        {
-            uint16_t data_len = packet[5];
-            if (data_len > 1) // Svaki log ima bar 1 bajt payload-a
-            {
-                LOG_DEBUG(3, "[LogPull] Primljen LOG (Dužina: %d) sa adrese 0x%X\n", data_len, m_current_pull_address);
-                
-                LogEntry newLog; 
-                memcpy((uint8_t*)&newLog, &packet[7], sizeof(LogEntry));
-                
-                if (m_eeprom_storage->WriteLog(&newLog) == LoggerStatus::LOGGER_OK)
-                {
-                    LOG_DEBUG(3, "[LogPull] Log uspješno zapisan u EEPROM.\n");
-                }
-            }
+            // ========================================================================
+            // --- KLJUČNA ISPRAVKA: Odmah provjeri ponovo da li ima još logova ---
+            // ========================================================================
+            m_state = PullState::SENDING_STATUS_REQUEST; // Vrati se na provjeru statusa za ISTI uređaj
+            return;
         }
     }
 
+    // Nakon obrade (ili ako nije bilo loga), vrati se u IDLE stanje i zabilježi vrijeme.
     m_state = PullState::IDLE;
+    m_last_activity_time = millis();
 }

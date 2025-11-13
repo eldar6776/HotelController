@@ -106,32 +106,51 @@ int Rs485Service::ReceivePacket(uint8_t* buffer, uint16_t buffer_size, uint32_t 
 {
     unsigned long start_time = millis();
     uint16_t rx_count = 0;
+    uint16_t expected_length = 0; // Očekivana ukupna dužina paketa
 
     while (millis() - start_time < timeout_ms)
     {
         if (m_rs485_serial.available())
         {
             uint8_t incoming_byte = m_rs485_serial.read();
-            if (rx_count < buffer_size)
+            
+            // Osiguraj da ne pređemo veličinu bafera
+            if (rx_count >= buffer_size)
             {
-                buffer[rx_count++] = incoming_byte;
-            }
-            else
-            {
-                // Buffer overflow
                 return -1;
             }
-            
-            if (incoming_byte == EOT)
+
+            buffer[rx_count++] = incoming_byte;
+
+            // KORAK 1: Čekamo minimalno 6 bajtova da bismo pročitali dužinu
+            if (rx_count == 6)
             {
+                uint8_t data_length = buffer[5];
+                expected_length = data_length + 9; // payload + header + checksum + EOT
+
+                // Provjera da li je očekivana dužina uopšte validna
+                if (expected_length < 10 || expected_length > buffer_size)
+                {
+                    LOG_DEBUG(2, "[Rs485] Primljena nevalidna dužina paketa: %d. Resetujem prijem.\n", data_length);
+                    rx_count = 0; // Resetuj i čekaj novi paket
+                    expected_length = 0;
+                    continue;
+                }
+            }
+            
+            // KORAK 2: Ako znamo očekivanu dužinu, čekamo da stignu svi bajtovi
+            if (expected_length > 0 && rx_count == expected_length)
+            {
+                // KORAK 3: Tek sada, kada imamo cijeli paket, validiramo ga
                 if (ValidatePacket(buffer, rx_count))
                 {
-                    return rx_count; // Vraća dužinu validnog paketa
+                    return rx_count; // Uspjeh! Vrati primljeni paket.
                 }
                 else
                 {
-                    // Nevalidan paket, resetuj brojač i nastavi čekati
+                    // Paket je neispravan. Resetuj sve i čekaj novi od početka.
                     rx_count = 0;
+                    expected_length = 0;
                 }
             }
         }

@@ -35,8 +35,9 @@ private:
     enum class PullState
     {
         IDLE,
-        WAITING_FOR_STATUS_ACK,
-        WAITING_FOR_LOG_ACK
+        SENDING_STATUS_REQUEST,
+        SENDING_LOG_REQUEST,
+        WAITING_FOR_RESPONSE
     };
 
     PullState m_state;
@@ -45,6 +46,7 @@ private:
     uint16_t m_address_list[MAX_ADDRESS_LIST_SIZE];
     uint16_t m_address_list_count;
     uint8_t m_retry_count;
+    unsigned long m_last_activity_time; // Za implementaciju RX2TX_DEL
 };
 
 #endif // LOG_PULL_MANAGER_H

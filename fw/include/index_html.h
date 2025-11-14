@@ -8,8 +8,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <html>
 <head>
     <title>ESP32 Hotel Controller</title>
-    <meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
-    <meta content="MSHTML 6.00.2800.1561" name="GENERATOR">
+    <meta charset="UTF-8">
     <style>
         body { font-family: Arial, sans-serif; background: #f4f4f4; }
         .container { max-width: 900px; margin: auto; background: #fff; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
@@ -26,10 +25,15 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         .file-item:hover { background: #f0f0f0; }
         .file-name { font-family: 'Courier New', monospace; flex-grow: 1; }
         .file-size { color: #666; margin-right: 10px; }
+        .dir-item { cursor: pointer; color: #0056b3; font-weight: bold; }
+        #currentPath { font-family: 'Courier New', monospace; color: #555; margin-bottom: 10px; }
         .delete-btn { padding: 4px 8px; background: #dc3545; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.9em; }
         .delete-btn:hover { background: #c82333; }
+        .rename-btn { padding: 4px 8px; background: #ffc107; color: black; border: none; cursor: pointer; border-radius: 3px; font-size: 0.9em; margin-left: 5px; }
+        .rename-btn:hover { background: #e0a800; }
         .refresh-btn { background: #28a745; }
         .refresh-btn:hover { background: #218838; }
+        .create-folder-section { margin-top: 10px; display: flex; gap: 10px; }
     </style>
 </head>
 <body>
@@ -114,7 +118,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     <hr>
     <input value="Update Firmwarea" type="button" onclick="send_event(480)">
     <input value="Update Bootloadera" type="button" onclick="send_event(481)">
-    <input value="Update config listom" type="button" onclick="send_event(482)">
     <hr>
     Prva slika: <input id="kont501" onchange="kont502.value = this.value" value="1" type="number" min="1" max="21">&nbsp;
     Zadnja slika: <input id="kont502" onchange="" value="1" type="number" min="1" max="21">&nbsp; &nbsp; &nbsp;
@@ -149,8 +152,13 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <h3>File Browser (uSD Kartica)
             <input type="button" class="refresh-btn" value="↻ Refresh" onclick="load_file_list()">
         </h3>
+        <div id="currentPath">/</div>
         <div id="fileList" class="file-list">
             <p style="text-align: center; color: #999;">Klikni "Refresh" za učitavanje...</p>
+        </div>
+        <div class="create-folder-section">
+            <input type="text" id="newFolderName" placeholder="Ime novog foldera..." style="flex-grow: 1; padding: 6px;">
+            <input type="button" value="Kreiraj Folder" onclick="create_folder()" style="background-color: #17a2b8;">
         </div>
     </div>
     
@@ -208,10 +216,14 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         
         var formData = new FormData();
         formData.append('file', file);
+
+        var currentPath = document.getElementById('currentPath').textContent;
+        if (currentPath === '/') currentPath = ''; // Ne dodajemo duplu kosu crtu za root
+        var destinationPath = currentPath + '/' + file.name;
         
         document.getElementById('uploadProgress').textContent = 'Uploading ' + file.name + '...';
         
-        fetch('/upload-firmware?file=' + encodeURIComponent(file.name), {
+        fetch('/upload-firmware?file=' + encodeURIComponent(destinationPath), {
             method: 'POST',
             body: formData
         })
@@ -219,7 +231,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         .then(text => {
             document.getElementById('uploadProgress').textContent = 'Upload OK: ' + file.name;
             document.getElementById('uploadProgress').style.color = 'green';
-            setTimeout(load_file_list, 500); // Refresh file list
+            // Osvježi trenutni direktorij
+            setTimeout(() => load_file_list(document.getElementById('currentPath').textContent), 500); 
         })
         .catch(e => {
             document.getElementById('uploadProgress').textContent = 'Upload ERROR: ' + e.message;
@@ -228,12 +241,14 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     }
 
     // --- NEW: Load File List ---
-    function load_file_list() {
-        fetch('/list_files')
+    function load_file_list(path) {
+        path = path || '/'; // Default na root
+        fetch('/list_files?path=' + encodeURIComponent(path))
             .then(response => response.json())
             .then(data => {
                 var fileListDiv = document.getElementById('fileList');
                 fileListDiv.innerHTML = '';
+                document.getElementById('currentPath').textContent = data.path || '/';
                 
                 if (data.error) {
                     fileListDiv.innerHTML = '<p style="color: red;">' + data.error + '</p>';
@@ -241,41 +256,133 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 }
                 
                 if (data.files.length === 0) {
-                    fileListDiv.innerHTML = '<p style="text-align: center; color: #999;">Nema fajlova</p>';
-                    return;
+                    // Ako nema fajlova, provjeri da li smo u root-u. Ako nismo, prikaži samo ".."
+                    if (data.path && data.path === '/') {
+                        fileListDiv.innerHTML = '<p style="text-align: center; color: #999;">Nema fajlova</p>';
+                    }
                 }
                 
+                // Dodaj ".." za navigaciju nazad, ako nismo u root-u
+                // Ovo se sada izvršava čak i ako je folder prazan
+                if (data.path && data.path !== '/') {
+                    var parentPath = data.path.substring(0, data.path.lastIndexOf('/')) || '/';
+                    var backItem = document.createElement('div');
+                    backItem.className = 'file-item dir-item';
+                    backItem.textContent = '..';
+                    backItem.onclick = function() { load_file_list(parentPath); };
+                    fileListDiv.appendChild(backItem);
+                }
+
+                // Sortiraj: prvo folderi, pa fajlovi
+                data.files.sort(function(a, b) {
+                    if (a.dir === b.dir) return a.name.localeCompare(b.name);
+                    return a.dir ? -1 : 1;
+                });
+                
                 data.files.forEach(function(file) {
-                    if (!file.dir) {
-                        var fileItem = document.createElement('div');
-                        fileItem.className = 'file-item';
+                    var fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    
+                    var fileName = document.createElement('span');
+                    fileName.className = 'file-name';
+                    fileName.textContent = file.name.split('/').pop(); // Prikazi samo ime, ne cijelu putanju
+                    
+                    fileItem.appendChild(fileName);
+
+                    if (file.dir) {
+                        fileItem.classList.add('dir-item');
                         
-                        var fileName = document.createElement('span');
-                        fileName.className = 'file-name';
-                        fileName.textContent = file.name;
-                        
+                        var renameBtn = document.createElement('button');
+                        renameBtn.className = 'rename-btn';
+                        renameBtn.textContent = 'Preimenuj';
+                        renameBtn.onclick = function(e) {
+                            e.stopPropagation(); // Spriječi klik na folder
+                            rename_item(file.name, true);
+                        };
+                        fileItem.appendChild(renameBtn);
+                        fileItem.onclick = function() { load_file_list(file.name); };
+                    } else {
                         var fileSize = document.createElement('span');
                         fileSize.className = 'file-size';
                         fileSize.textContent = formatBytes(file.size);
                         
                         var deleteBtn = document.createElement('button');
                         deleteBtn.className = 'delete-btn';
-                        deleteBtn.textContent = '✕ Delete';
+                        deleteBtn.textContent = '✕ Obriši';
                         deleteBtn.onclick = function() {
                             delete_file(file.name);
                         };
                         
-                        fileItem.appendChild(fileName);
                         fileItem.appendChild(fileSize);
                         fileItem.appendChild(deleteBtn);
-                        
-                        fileListDiv.appendChild(fileItem);
                     }
+                    
+                    fileListDiv.appendChild(fileItem);
                 });
             })
             .catch(e => {
                 document.getElementById('fileList').innerHTML = '<p style="color: red;">Greška: ' + e.message + '</p>';
+                document.getElementById('currentPath').textContent = path;
             });
+    }
+
+    // --- NEW: Rename Item ---
+    function rename_item(oldPath, isDir) {
+        var oldName = oldPath.split('/').pop();
+        var newName = prompt("Unesite novo ime za '" + oldName + "':", oldName);
+
+        if (newName === null || newName.trim() === '' || newName === oldName) {
+            return; // Korisnik odustao ili nije promijenio ime
+        }
+
+        newName = newName.trim();
+        // Jednostavna validacija imena
+        if (/[\\/:*?"<>|]/.test(newName)) {
+            alert('Ime sadrži nedozvoljene karaktere!');
+            return;
+        }
+
+        var currentDir = document.getElementById('currentPath').textContent;
+        if (currentDir === '/') currentDir = '';
+
+        var newPath = currentDir + '/' + newName;
+
+        fetch('/rename_item?old=' + encodeURIComponent(oldPath) + '&new=' + encodeURIComponent(newPath))
+            .then(response => response.text())
+            .then(text => {
+                show_response(text, !text.includes("successfully"));
+                load_file_list(document.getElementById('currentPath').textContent); // Osvježi prikaz
+            })
+            .catch(e => {
+                alert('Greška: ' + e.message);
+            });
+    }
+
+    // --- NEW: Create Folder ---
+    function create_folder() {
+        var folderName = document.getElementById('newFolderName').value.trim();
+        if (!folderName) {
+            alert('Unesite ime foldera!');
+            return;
+        }
+        // Jednostavna validacija imena
+        if (/[\\/:*?"<>|]/.test(folderName)) {
+            alert('Ime foldera sadrži nedozvoljene karaktere!');
+            return;
+        }
+
+        var currentPath = document.getElementById('currentPath').textContent;
+        if (currentPath === '/') currentPath = '';
+        var newFolderPath = currentPath + '/' + folderName;
+
+        fetch('/create_folder?path=' + encodeURIComponent(newFolderPath))
+            .then(response => response.text())
+            .then(text => {
+                show_response(text, false);
+                load_file_list(document.getElementById('currentPath').textContent); // Osvježi prikaz
+                document.getElementById('newFolderName').value = ''; // Očisti polje
+            })
+            .catch(e => alert('Greška: ' + e.message));
     }
 
     // --- NEW: Delete File ---
@@ -287,8 +394,9 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         fetch('/delete_file?file=' + encodeURIComponent(filename))
             .then(response => response.text())
             .then(text => {
-                alert(text);
-                load_file_list(); // Refresh
+                show_response(text, false);
+                // Osvježi trenutni direktorij
+                load_file_list(document.getElementById('currentPath').textContent); 
             })
             .catch(e => {
                 alert('Greška: ' + e.message);
@@ -385,9 +493,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         }
         else if (t == "481") {
             htt = "sysctrl.cgi?buf=" + document.getElementById("kont101").value + "&bul=" + document.getElementById("kont102").value;
-        }
-        else if (t == "482") {
-            htt = "sysctrl.cgi?cfg=run";
         }
         else if (t == "503") {
             htt = "sysctrl.cgi?iuf=" + document.getElementById("kont101").value + "&iul=" + document.getElementById("kont102").value +

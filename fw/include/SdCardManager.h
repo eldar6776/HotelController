@@ -69,6 +69,21 @@ public:
     bool DeleteFile(const char* path);
 
     /**
+     * @brief Kreira novi direktorijum na uSD kartici.
+     * @param path Puna putanja do novog direktorijuma
+     * @return true ako je kreiranje uspješno
+     */
+    bool CreateFolder(const char* path);
+
+    /**
+     * @brief Preimenuje fajl ili direktorijum.
+     * @param oldPath Stara putanja
+     * @param newPath Nova putanja
+     * @return true ako je preimenovanje uspješno
+     */
+    bool Rename(const char* oldPath, const char* newPath);
+
+    /**
      * @brief Kreira novi fajl za pisanje (briše postojeći ako postoji).
      * @param path Putanja do fajla
      * @return File objekat za pisanje

@@ -71,8 +71,16 @@ void HttpServer::Initialize(
     m_server.on("/list_files", HTTP_GET, [this](AsyncWebServerRequest *request)
                 {
         if (m_sd_card_manager->IsCardMounted())
-        {
-            String json = m_sd_card_manager->ListFiles("/");
+        {   
+            String path = "/";
+            if (request->hasParam("path")) {
+                path = request->getParam("path")->value();
+                // Osnovna sanitizacija putanje
+                if (!path.startsWith("/")) {
+                    path = "/" + path;
+                }
+            }
+            String json = m_sd_card_manager->ListFiles(path.c_str());
             request->send(200, "application/json", json);
         }
         else
@@ -98,6 +106,46 @@ void HttpServer::Initialize(
         {
             request->send(400, "text/plain", "Missing 'file' parameter");
         } });
+
+    m_server.on("/create_folder", HTTP_GET, [this](AsyncWebServerRequest *request)
+                {
+        if (request->hasParam("path"))
+        {
+            String path = request->getParam("path")->value();
+            if (m_sd_card_manager->CreateFolder(path.c_str()))
+            {
+                request->send(200, "text/plain", "Folder created: " + path);
+            }
+            else
+            {
+                request->send(500, "text/plain", "Failed to create folder. It may already exist or the path is invalid.");
+            }
+        }
+        else
+        {
+            request->send(400, "text/plain", "Missing 'path' parameter");
+        } });
+
+    m_server.on("/rename_item", HTTP_GET, [this](AsyncWebServerRequest *request)
+                {
+        if (request->hasParam("old") && request->hasParam("new"))
+        {
+            String oldPath = request->getParam("old")->value();
+            String newPath = request->getParam("new")->value();
+            if (m_sd_card_manager->Rename(oldPath.c_str(), newPath.c_str()))
+            {
+                request->send(200, "text/plain", "Item renamed successfully.");
+            }
+            else
+            {
+                request->send(500, "text/plain", "Failed to rename item. The new name might already exist or the path is invalid.");
+            }
+        }
+        else
+        {
+            request->send(400, "text/plain", "Missing 'old' or 'new' parameter");
+        } });
+
 
     m_server.onNotFound([this](AsyncWebServerRequest *request)
                         { this->HandleNotFound(request); });
@@ -912,15 +960,18 @@ void HttpServer::HandleFileUpload(AsyncWebServerRequest *request, String filenam
         return;
     }
 
-    String destPath = "/";
+    String destPath = "";
     if (request->hasParam("file", true))
     {
-        destPath += request->getParam("file", true)->value();
+        destPath = request->getParam("file", true)->value();
     }
     else
     {
-        destPath += filename;
+        destPath = "/" + filename;
     }
+
+    // Osiguraj da putanja uvijek počinje s '/'
+    if (!destPath.startsWith("/")) { destPath = "/" + destPath; }
 
     static File uploadFile;
 

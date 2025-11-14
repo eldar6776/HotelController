@@ -156,6 +156,65 @@ File SdCardManager::CreateFile(const char* path)
     return file;
 }
 
+bool SdCardManager::CreateFolder(const char* path)
+{
+    if (!m_card_mounted)
+    {
+        LOG_DEBUG(1, "[SdCard] GRESKA: Pokušaj kreiranja direktorijuma '%s' dok kartica nije montirana.\n", path);
+        return false;
+    }
+
+    if (SD.exists(path))
+    {
+        LOG_DEBUG(2, "[SdCard] UPOZORENJE: Pokušaj kreiranja direktorijuma '%s' koji već postoji.\n", path);
+        return false; 
+    }
+
+    if (SD.mkdir(path))
+    {
+        LOG_DEBUG(3, "[SdCard] Direktorijum '%s' uspješno kreiran.\n", path);
+        return true;
+    }
+    else
+    {
+        LOG_DEBUG(1, "[SdCard] GRESKA pri kreiranju direktorijuma '%s'.\n", path);
+        return false;
+    }
+}
+
+bool SdCardManager::Rename(const char* oldPath, const char* newPath)
+{
+    if (!m_card_mounted)
+    {
+        LOG_DEBUG(1, "[SdCard] GRESKA: Pokušaj preimenovanja '%s' u '%s' dok kartica nije montirana.\n", oldPath, newPath);
+        return false;
+    }
+
+    if (!SD.exists(oldPath))
+    {
+        LOG_DEBUG(2, "[SdCard] UPOZORENJE: Pokušaj preimenovanja nepostojećeg fajla/foldera '%s'.\n", oldPath);
+        return false;
+    }
+
+    if (SD.exists(newPath))
+    {
+        LOG_DEBUG(2, "[SdCard] UPOZORENJE: Odredišna putanja '%s' već postoji.\n", newPath);
+        return false;
+    }
+
+    if (SD.rename(oldPath, newPath))
+    {
+        LOG_DEBUG(3, "[SdCard] Uspješno preimenovan '%s' u '%s'.\n", oldPath, newPath);
+        return true;
+    }
+    else
+    {
+        LOG_DEBUG(1, "[SdCard] GRESKA pri preimenovanju '%s'.\n", oldPath, newPath);
+        return false;
+    }
+}
+
+
 bool SdCardManager::FileExists(const char* path)
 {
     if (!m_card_mounted)
@@ -204,13 +263,15 @@ String SdCardManager::ListFiles(const char* path)
         return "{\"error\":\"Not a directory\"}";
     }
     
-    String output = "{\"files\":[";
+    String output = "{\"path\":\"" + String(path) + "\",\"files\":[";
     bool first = true;
     
     File file = root.openNextFile();
     while (file)
     {
-        if (!first)
+        // Preskačemo ispisivanje samog sebe u listi (relevantno za root)
+        if (strcmp(file.name(), path) == 0) { file = root.openNextFile(); continue; }
+        if (!first) 
         {
             output += ",";
         }

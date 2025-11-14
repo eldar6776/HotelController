@@ -8,6 +8,7 @@
 
 #include "EepromStorage.h"
 #include "DebugConfig.h"
+#include "HttpResponseStrings.h" // NOVO: Uključujemo centralizovane stringove
 
 // Konstante za EEPROM
 #define EEPROM_PAGE_SIZE 256 // ISPRAVKA: Prema AT24C1024 datasheet-u, veličina stranice je 256 bajtova.
@@ -371,6 +372,53 @@ LoggerStatus EepromStorage::GetOldestLog(LogEntry* entry)
 
     LOG_DEBUG(4, "[Eeprom] Uspješno pročitan najstariji log sa adrese 0x%04X.\n", read_addr);
     return LoggerStatus::LOGGER_OK;
+}
+
+// ============================================================================
+// --- NOVA FUNKCIJA ZA KOMPATIBILNOST SA STARIM SISTEMOM ---
+// ============================================================================
+String EepromStorage::ReadLogBlockAsHexString()
+{
+    LOG_DEBUG(4, "[Eeprom] Čitanje bloka logova kao HEX string (V1 kompatibilnost)...\n");
+    if (m_log_count == 0)
+    {
+        return HTTP_RESPONSE_EMPTY;
+    }
+
+    // Logika preuzeta iz starog `HC_ReadLogListBlock`
+    // Čitamo fiksni blok od 128 bajtova (I2CEE_BLOCK) počevši od najstarijeg loga.
+    uint16_t read_addr = EEPROM_LOG_START_ADDR + (m_log_read_index * LOG_RECORD_SIZE);
+    uint16_t bytes_to_read = 128; // Fiksna veličina bloka kao u starom sistemu
+
+    // Osiguraj da ne čitamo preko kraja log memorije
+    uint32_t end_of_log_area = EEPROM_LOG_START_ADDR + EEPROM_LOG_AREA_SIZE;
+    if (read_addr + bytes_to_read > end_of_log_area) {
+        bytes_to_read = end_of_log_area - read_addr;
+    }
+
+    if (bytes_to_read == 0) {
+        return HTTP_RESPONSE_EMPTY;
+    }
+
+    uint8_t read_buffer[bytes_to_read];
+    if (!ReadBytes(read_addr, read_buffer, bytes_to_read))
+    {
+        LOG_DEBUG(1, "[Eeprom] GRESKA: Čitanje bloka logova nije uspjelo.\n");
+        return HTTP_RESPONSE_ERROR;
+    }
+
+    // Replikacija `Hex2Str` funkcije
+    String hex_string = "";
+    hex_string.reserve(bytes_to_read * 2); // Pre-alokacija za performanse
+    for (uint16_t i = 0; i < bytes_to_read; i++)
+    {
+        char hex_buf[3];
+        sprintf(hex_buf, "%02X", read_buffer[i]);
+        hex_string += hex_buf;
+    }
+
+    LOG_DEBUG(3, "[Eeprom] Vraćen HEX string dužine %d.\n", hex_string.length());
+    return hex_string;
 }
 
 LoggerStatus EepromStorage::DeleteOldestLog()

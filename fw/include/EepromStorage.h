@@ -66,6 +66,7 @@ public:
     // --- API za Logger (head/tail) ---
     LoggerStatus WriteLog(const LogEntry* entry);
     LoggerStatus GetOldestLog(LogEntry* entry);
+    String ReadLogBlockAsHexString(); // NOVO: Za kompatibilnost sa starim sistemom
     LoggerStatus DeleteOldestLog();
     LoggerStatus ClearAllLogs();
     uint16_t GetLogCount();

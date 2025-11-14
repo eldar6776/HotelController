@@ -55,18 +55,3 @@ const char LOG_HTML[] PROGMEM = R"rawliteral(
 </body>
 </html>
 )rawliteral";
-
-/**
- * @brief Zamjenjuje SSI tag sa formatiranim odgovorom ($MESSAGE$)
- * @param html HTML template string
- * @param replacement Message (bez dollar znakova)
- * @return HTML sa zamjenjenim tagom
- */
-inline String ReplaceSSITag(const String& html, const String& replacement)
-{
-    String result = html;
-    // Format: $MESSAGE$ (dodaj dollar znakove)
-    String formatted = "$" + replacement + "$";
-    result.replace("$<!--#t-->$", formatted);
-    return result;
-}

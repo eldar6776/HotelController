@@ -18,6 +18,7 @@ extern AppConfig g_appConfig;
 #define EOT 0x04
 #define ACK 0x06 // Primjer ACK statusa
 #define GET_SYS_STAT        0xA0 // CMD za Status Kontrolera (Polling)
+#define DEL_LOG_LIST        0xD3 // NOVO: CMD za brisanje loga
 #define GET_LOG_LIST        0xA3 // CMD za Dohvat Loga (Log Pull)
 
 // Definicija tajminga iz starog projekta (common.h)
@@ -171,6 +172,34 @@ void LogPullManager::SendStatusRequest(uint16_t address)
 }
 
 /**
+ * @brief Kreira i salje DEL_LOG_LIST paket.
+ */
+void LogPullManager::SendDeleteLogRequest(uint16_t address)
+{
+    LOG_DEBUG(4, "[LogPull] -> Šaljem DEL_LOG_LIST na adresu 0x%X\n", address);
+    
+    uint8_t packet[10]; 
+    uint16_t rsifa = g_appConfig.rs485_iface_addr;
+    uint8_t cmd = DEL_LOG_LIST;
+    
+    packet[0] = SOH;
+    packet[1] = (address >> 8);
+    packet[2] = (address & 0xFF);
+    packet[3] = (rsifa >> 8);
+    packet[4] = (rsifa & 0xFF);
+    packet[5] = 1; // Data Length
+    packet[6] = cmd;
+    
+    uint16_t checksum = cmd;
+    packet[7] = (checksum >> 8);
+    packet[8] = (checksum & 0xFF);
+    packet[9] = EOT;
+    
+    m_rs485_service->SendPacket(packet, 10);
+    // Ne čekamo odgovor na komandu za brisanje, samo je pošaljemo.
+}
+
+/**
  * @brief Kreira i salje GET_LOG_LIST paket (Log Pull).
  */
 void LogPullManager::SendLogRequest(uint16_t address)
@@ -262,6 +291,10 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
             if (m_eeprom_storage->WriteLog(&newLog) == LoggerStatus::LOGGER_OK)
             {
                 LOG_DEBUG(3, "[LogPull] -> Upisan log ID: %u sa kontrolera 0x%X\n", newLog.log_id, m_current_pull_address);
+                // ========================================================================
+                // --- KLJUČNA ISPRAVKA: Odmah pošalji komandu za brisanje loga ---
+                // ========================================================================
+                SendDeleteLogRequest(m_current_pull_address);
             }
             // ========================================================================
             // --- KLJUČNA ISPRAVKA: Odmah provjeri ponovo da li ima još logova ---

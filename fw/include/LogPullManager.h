@@ -26,6 +26,7 @@ public:
 private:
     void ProcessResponse(uint8_t* packet, uint16_t length);
     void SendStatusRequest(uint16_t address);
+    void SendDeleteLogRequest(uint16_t address);
     void SendLogRequest(uint16_t address);
     uint16_t GetNextAddress();
 

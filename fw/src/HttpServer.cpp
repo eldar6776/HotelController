@@ -20,6 +20,7 @@
 #include "EepromStorage.h"
 #include "SdCardManager.h"
 #include "log_html.h" // SSI Template
+#include "HttpResponseStrings.h" // NOVO: Uključujemo centralizovane stringove
 #include <cstring>
 #include <time.h>
 #include <pgmspace.h>
@@ -124,13 +125,10 @@ void HttpServer::HandleRoot(AsyncWebServerRequest *request)
  */
 void HttpServer::SendSSIResponse(AsyncWebServerRequest *request, const String &message)
 {
-    // =================================================================================
-    // KLJUČNA ISPRAVKA: Koristimo ispravnu logiku za zamjenu SSI taga.
-    // Originalni HTML je "$<!--#t-->$". Mijenjamo "<!--#t-->" sa porukom.
-    // Rezultat će biti "$MESSAGE$".
-    // =================================================================================
+    // Koristimo pomoćnu funkciju iz log_html.h koja ispravno formatira
+    // odgovor u format "$MESSAGE$" koji je kompatibilan sa starim sistemom.
     String html = String(FPSTR(LOG_HTML));
-    html.replace("<!--#t-->", message);
+    html.replace("$<!--#t-->$", "$" + message + "$");
     request->send(200, "text/html", html);
 }
 
@@ -257,7 +255,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     // Provjera da li je update već u toku
     if (m_update_manager->m_session.state != S_IDLE)
     {
-        SendSSIResponse(request, "BUSY");
+        SendSSIResponse(request, HTTP_RESPONSE_BUSY);
         return;
     }
 
@@ -281,11 +279,11 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         g_appConfig.gateway = IpStringToUint(request->getParam("gwa")->value());
         if (m_eeprom_storage->WriteConfig(&g_appConfig))
         {
-            SendSSIResponse(request, "OK");
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
         }
         else
         {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
         }
         return;
     }
@@ -318,11 +316,11 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             {
                 struct timeval now = {.tv_sec = t};
                 settimeofday(&now, nullptr);
-                SendSSIResponse(request, "OK");
+                SendSSIResponse(request, HTTP_RESPONSE_OK);
                 return;
             }
         }
-        SendSSIResponse(request, "ERROR");
+        SendSSIResponse(request, HTTP_RESPONSE_ERROR);
         return;
     }
 
@@ -333,18 +331,14 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
 
         if (log_op == "3" || log_op.equalsIgnoreCase("RDlog"))
         {
-            LogEntry entry;
-            if (m_eeprom_storage->GetOldestLog(&entry) == LoggerStatus::LOGGER_OK)
+            String hex_log_block = m_eeprom_storage->ReadLogBlockAsHexString();
+            if (hex_log_block != HTTP_RESPONSE_ERROR)
             {
-                char log_str[256];
-                snprintf(log_str, 256, "Log ID: %u\nEvent: 0x%02X\nAddr: 0x%04X\nType: %u\nTime: %lu\nCard: %02X%02X%02X%02X",
-                         entry.log_id, entry.event_code, entry.device_addr, entry.log_type, entry.timestamp,
-                         entry.rf_card_id[0], entry.rf_card_id[1], entry.rf_card_id[2], entry.rf_card_id[3]);
-                SendSSIResponse(request, String(log_str));
+                SendSSIResponse(request, hex_log_block);
             }
             else
             {
-                SendSSIResponse(request, "EMPTY");
+                SendSSIResponse(request, HTTP_RESPONSE_ERROR);
             }
             return;
         }
@@ -352,11 +346,11 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         {
             if (m_eeprom_storage->DeleteOldestLog() == LoggerStatus::LOGGER_OK)
             {
-                SendSSIResponse(request, "DELETED");
+                SendSSIResponse(request, HTTP_RESPONSE_DELETED);
             }
             else
             {
-                SendSSIResponse(request, "EMPTY");
+                SendSSIResponse(request, HTTP_RESPONSE_EMPTY);
             }
             return;
         }
@@ -364,15 +358,15 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         {
             if (m_eeprom_storage->ClearAllLogs() == LoggerStatus::LOGGER_OK)
             {
-                SendSSIResponse(request, "OK");
+                SendSSIResponse(request, HTTP_RESPONSE_OK);
             }
             else
             {
-                SendSSIResponse(request, "ERROR");
+                SendSSIResponse(request, HTTP_RESPONSE_ERROR);
             }
             return;
         }
-        SendSSIResponse(request, "ERROR");
+        SendSSIResponse(request, HTTP_RESPONSE_ERROR);
         return;
     }
 
@@ -383,14 +377,14 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
 
         if (!m_sd_card_manager->IsCardMounted())
         {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
             return;
         }
 
         String content = m_sd_card_manager->ReadTextFile(PATH_CTRL_ADD_LIST);
         if (content.length() == 0)
         {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
             return;
         }
 
@@ -439,12 +433,12 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         // Upiši u EEPROM keš
         if (m_eeprom_storage->WriteAddressList(address_list, count))
         {
-            SendSSIResponse(request, "OK");
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
             // TODO: Treba signalizirati LogPullManageru da ponovo učita listu
         }
         else
         {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
         }
         return;
     }
@@ -453,7 +447,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     if (request->hasParam("fwu") || request->hasParam("HCfwu"))
     {
         Serial.println("[HttpServer] Restarting system for update (fwu=hc)...");
-        SendSSIResponse(request, "OK");
+        SendSSIResponse(request, HTTP_RESPONSE_OK);
         delay(100);
         ESP.restart();
         return;
@@ -468,11 +462,11 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         if (StartUpdateSession(request, CMD_OLD_UPDATE_FWR, request->getParam("cud")->value(), request->getParam("cud")->value()))
         {
-            SendSSIResponse(request, "OK");
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
         }
         else
         {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
         }
         return;
     }
@@ -482,11 +476,11 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         if (StartUpdateSession(request, CMD_DWNLD_FWR_IMG, request->getParam("fuf")->value(), request->getParam("ful")->value()))
         {
-            SendSSIResponse(request, "OK");
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
         }
         else
         {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
         }
         return;
     }
@@ -496,11 +490,11 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         if (StartUpdateSession(request, CMD_DWNLD_BLDR_IMG, request->getParam("buf")->value(), request->getParam("bul")->value()))
         {
-            SendSSIResponse(request, "OK");
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
         }
         else
         {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
         }
         return;
     }
@@ -510,11 +504,11 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         if (StartUpdateSession(request, CMD_RT_DWNLD_FWR, request->getParam("tuf")->value(), request->getParam("tuf")->value()))
         {
-            SendSSIResponse(request, "OK");
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
         }
         else
         {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
         }
         return;
     }
@@ -524,11 +518,11 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         if (StartUpdateSession(request, CMD_RT_DWNLD_LOGO, request->getParam("tlg")->value(), request->getParam("tlg")->value()))
         {
-            SendSSIResponse(request, "OK");
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
         }
         else
         {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
         }
         return;
     }
@@ -538,7 +532,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     {
         // Provjeri da li postoji SD kartica
         if (!m_sd_card_manager->IsCardMounted()) {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
             return;
         }
 
@@ -548,7 +542,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         uint8_t last_img = request->getParam("ila")->value().toInt();
 
         if (first_img < 1 || last_img > 14 || first_img > last_img || first_addr == 0 || last_addr < first_addr) {
-            SendSSIResponse(request, "ERROR");
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
             return;
         }
 
@@ -801,8 +795,8 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             
             if (m_eeprom_storage->WriteConfig(&g_appConfig)) 
             {
-                SendSSIResponse(request, "OK");
-                SendSSIResponse(request, "ERROR (EEPROM Write)");
+                SendSSIResponse(request, HTTP_RESPONSE_OK);
+                SendSSIResponse(request, HTTP_RESPONSE_ERROR);
             }
             return; 
         }
@@ -833,7 +827,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             Serial.println(F("[HttpServer] Primljen lokalni System ID..."));
             g_appConfig.system_id = new_id;
             if (!m_eeprom_storage->WriteConfig(&g_appConfig)) {
-                SendSSIResponse(request, "ERROR");
+                SendSSIResponse(request, HTTP_RESPONSE_ERROR);
                 return;
             }            
             targetAddrStr = "RSbra"; 
@@ -889,7 +883,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         {
             // Upit je uspio, proslijedi stvarni odgovor ili "OK" ako je odgovor prazan.
             String response_str((char*)response_buffer);
-            if (response_str.length() == 0) response_str = "OK"; // Fallback ako je odgovor prazan
+            if (response_str.length() == 0) response_str = HTTP_RESPONSE_OK; // Fallback ako je odgovor prazan
             
             SendSSIResponse(request, response_str); // Proslijedi stvarni odgovor
         }
@@ -898,12 +892,12 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             // =================================================================================
             // KLJUČNA ISPRAVKA: Ako upit ne uspije (timeout), pošalji "TIMEOUT" odgovor.
             // =================================================================================
-            SendSSIResponse(request, "TIMEOUT");
+            SendSSIResponse(request, HTTP_RESPONSE_TIMEOUT);
         }
     }
     else
     {
-        SendSSIResponse(request, "ERROR"); // Nepoznata komanda
+        SendSSIResponse(request, HTTP_RESPONSE_ERROR); // Nepoznata komanda
     }
 }
 

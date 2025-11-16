@@ -38,7 +38,10 @@ enum UpdateState
     S_WAITING_FOR_DATA_ACK,
     S_FINISHING,
     S_WAITING_FOR_FINISH_ACK,
-    S_PENDING_RESTART_CMD, // NOVO: Stanje za slanje START_BLDR nakon UPDATE_FWR
+    S_SENDING_RESTART_CMD,       // Stanje za slanje START_BLDR komande
+    S_WAITING_FOR_RESTART_ACK,   // NOVO: Čekanje na ACK nakon START_BLDR
+    S_PENDING_FW_UPDATE,         // NOVO: Stanje koje prethodi slanju DWNLD_FWR
+    S_PENDING_APP_START,         // Stanje za pauzu prije slanja APP_EXE
     S_COMPLETED_OK,
     S_FAILED,
     S_PENDING_CLEANUP
@@ -76,7 +79,8 @@ enum UpdateType
 struct UpdateSession
 {
     UpdateState state;
-    UpdateType  type;          
+    UpdateType  type;
+    uint8_t     original_cmd; // NOVO: Čuva originalnu komandu (npr. CMD_DWNLD_FWR_IMG)
     uint8_t     clientAddress;
     uint32_t    fw_size;       
     uint32_t    fw_crc;        
@@ -131,12 +135,13 @@ public:
 private:
     void ProcessResponse(const uint8_t* packet, uint16_t length);
     void OnTimeout();
-
-
-    void SendStartRequest();
+    
+    void SendFirmwareStartRequest(); // NOVO: Za FW/BLDR
+    void SendFileStartRequest();     // NOVO: Za Slike/Logo
     void SendDataPacket();
     void SendFinishRequest();
     void SendRestartCommand();
+    void SendAppExeCommand(); // Deklaracija za novu funkciju
     void CleanupSession(bool failed = false);
     
     // REFAKTORISANA: Određuje ime fajla, otvara ga i čita metadatu

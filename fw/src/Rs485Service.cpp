@@ -121,6 +121,9 @@ int Rs485Service::ReceivePacket(uint8_t* buffer, uint16_t buffer_size, uint32_t 
             }
 
             buffer[rx_count++] = incoming_byte;
+            // --- DODATA DIJAGNOSTIKA ---
+            LOG_DEBUG(5, "[Rs485] Primljen bajt: 0x%02X (ukupno: %d)\n", incoming_byte, rx_count);
+            // --- KRAJ DIJAGNOSTIKE ---
 
             // KORAK 1: Čekamo minimalno 6 bajtova da bismo pročitali dužinu
             if (rx_count == 6)
@@ -141,6 +144,9 @@ int Rs485Service::ReceivePacket(uint8_t* buffer, uint16_t buffer_size, uint32_t 
             // KORAK 2: Ako znamo očekivanu dužinu, čekamo da stignu svi bajtovi
             if (expected_length > 0 && rx_count == expected_length)
             {
+                // --- DODATA DIJAGNOSTIKA ---
+                LOG_DEBUG(4, "[Rs485] Primljen kompletan paket (dužina: %d). Pokrećem validaciju...\n", rx_count);
+                // --- KRAJ DIJAGNOSTIKE ---
                 // KORAK 3: Tek sada, kada imamo cijeli paket, validiramo ga
                 if (ValidatePacket(buffer, rx_count))
                 {
@@ -155,7 +161,21 @@ int Rs485Service::ReceivePacket(uint8_t* buffer, uint16_t buffer_size, uint32_t 
             }
         }
     }
-    return 0; // Timeout
+
+    // --- CILJANA DIJAGNOSTIKA ZA TIMEOUT ---
+    // Ako je timeout istekao, a primili smo neke bajtove, ispiši ih.
+    // Ovo nam pomaže da vidimo da li je stigao oštećen ili nekompletan odgovor.
+    if (rx_count > 0) {
+        char incomplete_packet_str[rx_count * 3 + 1];
+        incomplete_packet_str[0] = '\0';
+        for (int i = 0; i < rx_count; i++) {
+            sprintf(incomplete_packet_str + strlen(incomplete_packet_str), "%02X ", buffer[i]);
+        }
+        Serial.printf("[Rs485] TIMEOUT! Primljen nekompletan paket (%d B): [ %s]\n", rx_count, incomplete_packet_str);
+    }
+    // --- KRAJ DIJAGNOSTIKE ---
+
+    return 0; // Vraća 0 za timeout
 }
 
 bool Rs485Service::SendPacket(const uint8_t* data, uint16_t length)

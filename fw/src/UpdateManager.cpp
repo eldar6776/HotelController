@@ -20,18 +20,19 @@
 #define ACK 0x06
 #define NAK 0x15
 
-// CMD-ovi za Update Protokol
+// CMD-ovi za Update Protokol (interno, ne šalju se direktno)
 #define CMD_UPDATE_START    0x14 
 #define CMD_UPDATE_DATA     0x15 
 #define CMD_UPDATE_FINISH   0x16 
 
-// CMD-ovi za različite vrste update-a
-#define CMD_DWNLD_FWR_IMG   0x77U 
-#define CMD_DWNLD_BLDR_IMG  0x78U 
+// Komande koje se šalju na RS485 (iz common.h) - ISPRAVLJENE VRIJEDNOSTI
+#define CMD_DWNLD_FWR_IMG   0xBFU // Originalno: DWNLD_FWR
+#define CMD_DWNLD_BLDR_IMG  0xC2U // Originalno: UPDATE_BLDR
+#define CMD_START_BLDR      0xBCU
+#define CMD_APP_EXE         0xBBU
 #define CMD_RT_DWNLD_FWR    0x79U 
 #define CMD_RT_DWNLD_BLDR   0x7AU
-#define CMD_RT_DWNLD_LOGO   0x7BU 
-#define CMD_START_BLDR      0x17U // Definicija komande koja nedostaje
+#define CMD_RT_DWNLD_LOGO   0x7BU
 
 // Tajminzi iz common.h za replikaciju originalnog protokola
 #define FWR_COPY_DEL        1567U // Pauza za RC da iskopira novi firmware
@@ -41,13 +42,14 @@
 extern AppConfig g_appConfig; 
 
 // ============================================================================
-// --- NOVA STM32-KOMPATIBILNA CRC32 IMPLEMENTACIJA ---
+// --- STM32 CRC32 HARDWARE-LIKE SOFTWARE IMPLEMENTATION ---
+// Replicating the exact logic from the provided stm32_crc.c file.
 // ============================================================================
 #define CRC32_POLYNOMIAL 0x04C11DB7
-#define STM32_CRC_INITIAL_VALUE 0xFFFFFFFF
 
 /**
- * @brief Ažurira CRC obradom jedne 32-bitne riječi, imitirajući hardver.
+ * @brief Updates the CRC by processing a single 32-bit word, mimicking the hardware.
+ * This is a direct C++ port of the function from stm32_crc.c.
  */
 static uint32_t crc_update_word(uint32_t crc, uint32_t word) {
     crc ^= word;
@@ -62,12 +64,12 @@ static uint32_t crc_update_word(uint32_t crc, uint32_t word) {
 }
 
 /**
- * @brief Ažurira CRC vrijednost sa baferom podataka.
- * Ova implementacija ispravno simulira ponašanje STM32 hardvera.
+ * @brief Updates a CRC value with a buffer of data, simulating STM32 hardware behavior.
+ * This is a direct C++ port of the function from stm32_crc.c.
  */
 static uint32_t stm32_crc32_update(uint32_t crc, const uint8_t *data, size_t len) {
     while (len--) {
-        // STM32 CRC hardver obrađuje svaki bajt kao 32-bitnu riječ.
+        // The STM32 CRC hardware processes each byte as a 32-bit word.
         crc = crc_update_word(crc, (uint32_t)*data++);
     }
     return crc;
@@ -90,19 +92,21 @@ void UpdateManager::Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCa
 
 uint32_t UpdateManager::CalculateCRC32(File& file)
 {
-    uint32_t crc = STM32_CRC_INITIAL_VALUE;
+    // Use the STM32-specific initial value.
+    uint32_t crc = 0xFFFFFFFF; 
     uint8_t buffer[256];
     
     file.seek(0);
     
     while (file.available())
     {
-        size_t len = file.read(buffer, sizeof(buffer)); // NOLINT(bugprone-sizeof-expression)
+        size_t len = file.read(buffer, sizeof(buffer));
+        // Use the replicated STM32 CRC update function.
         crc = stm32_crc32_update(crc, buffer, len);
     }
     
     file.seek(0);
-    return crc; // Vraća konačnu CRC vrijednost bez dodatne XOR operacije
+    return crc;
 }
 
 bool UpdateManager::ReadMetadataFromFile(const String& metaFilePath, uint32_t* size, uint32_t* crc)
@@ -312,16 +316,61 @@ void UpdateManager::Run()
         return;
     }
 
-    // Specijalni tajmer za pauzu prije slanja START_BLDR
-    if (m_session.state == UpdateState::S_PENDING_RESTART_CMD && (millis() - m_session.timeoutStart < APP_START_DEL))
+    // Specijalni tajmer za pauzu prije slanja APP_EXE (nakon START_BLDR)
+    if (m_session.state == UpdateState::S_PENDING_APP_START)
     {
-        return;
+        if (millis() - m_session.timeoutStart >= APP_START_DEL) {
+            SendAppExeCommand(); // Pauza je gotova, šalji APP_EXE
+        }
+        return; // Čekaj da pauza istekne
+    }
+
+    // NOVO: Centralizovana logika za čekanje odgovora
+    if (m_session.state == S_WAITING_FOR_START_ACK ||
+        m_session.state == S_WAITING_FOR_DATA_ACK ||
+        m_session.state == S_WAITING_FOR_FINISH_ACK)
+    {
+        uint8_t response_buffer[MAX_PACKET_LENGTH];
+        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, 0); // 0 = non-blocking
+
+        if (response_len > 0)
+        {
+            ProcessResponse(response_buffer, response_len);
+        }
+        else
+        {
+            // Nema odgovora, provjeri timeout
+            uint32_t response_timeout = UPDATE_PACKET_TIMEOUT_MS; // Default
+
+            // KLJUČNA ISPRAVKA: Postavi ispravan timeout ovisno o stanju i tipu
+            if (m_session.state == S_WAITING_FOR_START_ACK) {
+                // Za START paket, uvijek čekaj duže da klijent obradi zahtjev (npr. brisanje flash-a)
+                response_timeout = IMG_COPY_DEL;
+            } else if (m_session.state == S_WAITING_FOR_DATA_ACK && (m_session.bytesSent + m_session.read_chunk_size) >= m_session.fw_size) {
+                // Za zadnji DATA paket, također čekaj duže da klijent zapiše podatke
+                response_timeout = (m_session.type == TYPE_FW_RC || m_session.type == TYPE_BLDR_RC) ? IMG_COPY_DEL : FWR_COPY_DEL;
+            }
+
+            // Provjeri je li timeout istekao
+            if (millis() - m_session.timeoutStart > response_timeout) {
+                OnTimeout();
+            }
+        }
+        return; // Vrati se i čekaj sljedeći ciklus
     }
 
     switch (m_session.state)
     {
     case UpdateState::S_STARTING:
-        SendStartRequest();
+        // ISPRAVKA: Pozovi ispravnu start funkciju na osnovu tipa
+        if (m_session.type == TYPE_FW_RC || m_session.type == TYPE_BLDR_RC) {
+            SendFirmwareStartRequest();
+        } else if (m_session.type == TYPE_IMG_RC || m_session.type == TYPE_LOGO_RT || m_session.type == TYPE_FW_TH || m_session.type == TYPE_BLDR_TH) {
+            SendFileStartRequest();
+        } else {
+            Serial.println(F("[UpdateManager] GREŠKA: Nepoznat tip sesije za S_STARTING."));
+            CleanupSession(true);
+        }
         break;
     case UpdateState::S_SENDING_DATA:
         SendDataPacket();
@@ -329,8 +378,8 @@ void UpdateManager::Run()
     case UpdateState::S_FINISHING:
         SendFinishRequest();
         break;
-    case UpdateState::S_PENDING_RESTART_CMD:
-        SendRestartCommand();
+    case UpdateState::S_SENDING_RESTART_CMD:
+        SendRestartCommand(); // Šalje START_BLDR
         break;
     case UpdateState::S_PENDING_CLEANUP:
         CleanupSession(false);
@@ -365,8 +414,11 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
         }
         else 
         {
-            Serial.printf("[UpdateManager] -> Primljen START NACK ili pogrešan odgovor (ACK: 0x%02X, CMD: 0x%02X). Prekidam.\n", ack_nack, response_cmd);
-            CleanupSession(true);
+            // ISPRAVKA: Ako dobijemo NAK, ne prekidamo odmah.
+            // Tretiramo ga kao timeout da bismo pokrenuli mehanizam za ponovno slanje.
+            // Ovo replicira ponašanje starog sistema gdje se `trial` brojač povećava.
+            Serial.printf("[UpdateManager] -> Primljen START NACK (0x%02X) ili pogrešan odgovor (očekivano 0x14, primljeno 0x%02X). Pokrećem ponovni pokušaj...\n", ack_nack, response_cmd);
+            OnTimeout();
         }
     }
     else if (m_session.state == UpdateState::S_WAITING_FOR_DATA_ACK)
@@ -382,10 +434,9 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
                 // REPLIKACIJA STAROG PROTOKOLA:
                 // Ako je ovo bio firmware update, ne šaljemo FINISH, već se pripremamo za START_BLDR
                 if (m_session.type == TYPE_FW_RC)
-                {
-                    Serial.println(F("[UpdateManager] Slanje fajla završeno. Priprema za START_BLDR..."));
-                    m_session.state = S_PENDING_RESTART_CMD;
-                    m_session.timeoutStart = millis(); // Pokreni pauzu od APP_START_DEL
+                {   
+                    Serial.println(F("[UpdateManager] Slanje FW fajla završeno. Prelazim na slanje START_BLDR komande."));
+                    m_session.state = S_SENDING_RESTART_CMD;
                 }
                 else // Za sve ostale tipove (slike, itd.), koristi se standardni FINISH
                 {
@@ -425,6 +476,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
         }
     }
     else if (m_session.state == UpdateState::S_WAITING_FOR_FINISH_ACK)
+    
     {
         if (ack_nack == ACK && response_cmd == CMD_UPDATE_FINISH) 
         {
@@ -446,21 +498,23 @@ void UpdateManager::OnTimeout()
     {
         Serial.println(F("[UpdateManager] GREŠKA: Previše neuspješnih pokušaja. Update prekinut."));
         CleanupSession(true);
+        CleanupSession(true); // Ovdje se postavlja S_IDLE
     }
     else
     {
         m_session.retryCount++; // Uvećaj brojač za sljedeći pokušaj
         Serial.printf("[UpdateManager] Timeout. Pokušaj %d od %d...\n", m_session.retryCount, MAX_UPDATE_RETRIES);
+        Serial.printf("[UpdateManager] Timeout u stanju [%d]. Pokušaj %d od %d...\n", m_session.state, m_session.retryCount, MAX_UPDATE_RETRIES);
 
         // Ponovo pošalji isti paket
         switch(m_session.state) {
             case S_WAITING_FOR_START_ACK:
-                SendStartRequest();
+                // ISPRAVKA: Vrati stanje na S_STARTING da bi Run() petlja ponovo pozvala ispravnu funkciju za slanje.
+                // Ovo osigurava da se SendFileStartRequest() ili SendFirmwareStartRequest() ponovo izvrše.
+                m_session.state = S_STARTING;
                 break;
             case S_WAITING_FOR_DATA_ACK:
-                // Vraćamo fajl pointer na početak zadnjeg pročitanog chunka.
-                m_session.fw_file.seek(m_session.bytesSent);
-                SendDataPacket();
+                m_session.state = S_SENDING_DATA; // Vrati stanje da Run() ponovo pošalje
                 break;
             case S_WAITING_FOR_FINISH_ACK:
                 SendFinishRequest();
@@ -472,16 +526,100 @@ void UpdateManager::OnTimeout()
     }
 }
 
-void UpdateManager::SendStartRequest()
+/**
+ * @brief Šalje START paket za Firmware/Bootloader.
+ * Replicira logiku iz HC_CreateFirmwareUpdateRequest.
+ */
+void UpdateManager::SendFirmwareStartRequest()
 {
-    Serial.println(F("[UpdateManager] -> Šaljem START paket..."));
+    UpdateSession* s = &m_session;
+    uint8_t packet[16];
+    uint16_t rsifa = g_appConfig.rs485_iface_addr;
+    uint16_t data_len = 0;
+    uint16_t total_packet_len = 0;
+
+    packet[0] = SOH;
+    packet[1] = (s->clientAddress >> 8);
+    packet[2] = (s->clientAddress & 0xFF);
+    packet[3] = (rsifa >> 8);
+    packet[4] = (rsifa & 0xFF);
+
+    // Logika iz HC_CreateFirmwareUpdateRequest: Prvo se šalje START_BLDR, pa tek onda DWNLD_FWR
+    if (s->currentSequenceNum == 0) // Prvi korak, šalje se START_BLDR
+    {
+        Serial.println(F("[UpdateManager] -> Šaljem START_BLDR paket..."));
+        data_len = 1;
+        packet[6] = CMD_START_BLDR;
+    }
+    else // Drugi korak (nakon ACK-a na START_BLDR), šalje se DWNLD_FWR sa brojem paketa
+    {
+        Serial.println(F("[UpdateManager] -> Šaljem DWNLD_FWR paket..."));
+        data_len = 3;
+        packet[6] = CMD_DWNLD_FWR_IMG; // U starom kodu je ovo bio DWNLD_FWR
+        
+        uint16_t total_packets = (s->fw_size + UPDATE_DATA_CHUNK_SIZE - 1) / UPDATE_DATA_CHUNK_SIZE;
+        packet[7] = (total_packets >> 8) & 0xFF;
+        packet[8] = total_packets & 0xFF;
+    }
+
+    packet[5] = data_len;
+    total_packet_len = data_len + 9;
+
+    uint16_t checksum = 0;
+    for (uint32_t i = 6; i < (6 + data_len); i++) checksum += packet[i];
+
+    packet[total_packet_len - 3] = (checksum >> 8);
+    packet[total_packet_len - 2] = (checksum & 0xFF);
+    packet[total_packet_len - 1] = EOT;
+
+    if (m_rs485_service->SendPacket(packet, total_packet_len)) {
+        s->timeoutStart = millis();
+        s->state = S_WAITING_FOR_START_ACK;
+    } else {
+        CleanupSession(true);
+    }
+}
+
+/**
+ * @brief Šalje START paket za Slike/Logo (File Update).
+ * Replicira logiku iz HC_CreateFileUpdateRequest.
+ */
+void UpdateManager::SendFileStartRequest()
+{
     UpdateSession* s = &m_session;
     uint8_t packet[32]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
-    uint16_t data_len = 12;
+    uint16_t data_len = 11; // Fiksna dužina za file update start
 
-    uint8_t sub_cmd = (uint8_t)s->type;
-    uint8_t tx_start_cmd = CMD_UPDATE_START; 
+    // Određivanje tačne komande na osnovu tipa
+    uint8_t sub_cmd = 0;
+    Serial.printf("[UpdateManager] -> Šaljem START paket za fajl (Tip: %d)...\n", s->type);
+    if (s->type == TYPE_IMG_RC) {
+        // Izvuci broj slike iz imena fajla, npr. "101_1.RAW" -> 1
+        int last_ = s->filename.lastIndexOf('_');
+        int last_dot = s->filename.lastIndexOf('.');
+        if (last_ != -1 && last_dot != -1) {
+            String img_num_str = s->filename.substring(last_ + 1, last_dot);
+            sub_cmd = CMD_IMG_RC_START + img_num_str.toInt() - 1;
+        }
+    } else {
+        // Fallback za ostale tipove
+        switch(s->type) {
+            case TYPE_FW_TH:   sub_cmd = CMD_RT_DWNLD_FWR; break;
+            case TYPE_BLDR_TH: sub_cmd = CMD_RT_DWNLD_BLDR; break;
+            case TYPE_LOGO_RT: sub_cmd = CMD_RT_DWNLD_LOGO; break;
+            default:
+                Serial.printf("[UpdateManager] GREŠKA: Nepodržan tip fajla za SendFileStartRequest: %d\n", s->type);
+                CleanupSession(true);
+                return;
+        }
+    }
+
+    if (sub_cmd == 0) {
+        Serial.println(F("[UpdateManager] GREŠKA: Nije moguće odrediti sub_cmd za sliku."));
+        CleanupSession(true);
+        return;
+    }
 
     packet[0] = SOH;
     packet[1] = (s->clientAddress >> 8);
@@ -490,29 +628,46 @@ void UpdateManager::SendStartRequest()
     packet[4] = (rsifa & 0xFF);
     packet[5] = data_len; 
     
-    packet[6] = tx_start_cmd; 
-    
-    packet[7] = (s->fw_size >> 24);
-    packet[8] = (s->fw_size >> 16);
-    packet[9] = (s->fw_size >> 8);
-    packet[10] = (s->fw_size & 0xFF);
+    packet[6] = sub_cmd;
 
-    packet[11] = (s->fw_crc >> 24);
-    packet[12] = (s->fw_crc >> 16);
-    packet[13] = (s->fw_crc >> 8);
-    packet[14] = (s->fw_crc & 0xFF);
+    uint16_t total_packets = (s->fw_size + UPDATE_DATA_CHUNK_SIZE - 1) / UPDATE_DATA_CHUNK_SIZE;
+    packet[7] = (total_packets >> 8) & 0xFF;
+    packet[8] = total_packets & 0xFF;
 
-    packet[15] = sub_cmd; 
-    packet[16] = 0x00; 
-    packet[17] = 0x00; 
+    packet[9] = (s->fw_size >> 24);
+    packet[10] = (s->fw_size >> 16);
+    packet[11] = (s->fw_size >> 8);
+    packet[12] = (s->fw_size & 0xFF);
+
+    packet[13] = (s->fw_crc >> 24);
+    packet[14] = (s->fw_crc >> 16);
+    packet[15] = (s->fw_crc >> 8);
+    packet[16] = (s->fw_crc & 0xFF);
     
     uint16_t checksum = 0;
     for (uint32_t i = 6; i < (6 + data_len); i++) checksum += packet[i];
 
-    packet[18] = (checksum >> 8);
-    packet[19] = (checksum & 0xFF);
-    packet[20] = EOT;
+    packet[17] = (checksum >> 8);
+    packet[18] = (checksum & 0xFF);
+    packet[19] = EOT;
     
+    // --- CILJANA DIJAGNOSTIKA ZA START PAKET ---
+    // Ispisuje se uvijek, bez obzira na DEBUG_LEVEL, kako bismo uhvatili grešku.
+    Serial.println(F("--- START Paket za Sliku (Dijagnostika) ---"));
+    Serial.printf("  -> Ciljna Adresa:  0x%02X (%d)\n", s->clientAddress, s->clientAddress);
+    Serial.printf("  -> Izvorna Adresa:  0x%04X\n", rsifa);
+    Serial.printf("  -> Komanda (SubCMD): 0x%02X\n", sub_cmd);
+    Serial.printf("  -> Ukupno Paketa:   %u\n", total_packets);
+    Serial.printf("  -> Veličina Fajla:  %lu\n", s->fw_size);
+    Serial.printf("  -> CRC32 Fajla:     0x%08lX\n", s->fw_crc);
+    char packet_str[61] = {0}; // 20 bajtova * 3 znaka (npr. "XX ")
+    for (int i = 0; i < 20; i++) {
+        sprintf(packet_str + strlen(packet_str), "%02X ", packet[i]);
+    }
+    Serial.printf("  -> RAW Paket (20B): [ %s]\n", packet_str);
+    Serial.println(F("---------------------------------------------"));
+    // --- KRAJ DIJAGNOSTIKE ---
+
     // REPLIKACIJA TAJMINGA IZ STAROG KODA
     uint32_t response_timeout = UPDATE_PACKET_TIMEOUT_MS;
     if (s->type == TYPE_FW_RC || s->type == TYPE_BLDR_RC)
@@ -526,19 +681,9 @@ void UpdateManager::SendStartRequest()
         response_timeout = FWR_COPY_DEL;
     }
 
-    if (m_rs485_service->SendPacket(packet, 21))
-    {
-        s->timeoutStart = millis();
+    // ISPRAVKA: Dužina paketa je 20, a ne 21
+    if (m_rs485_service->SendPacket(packet, 20)) {
         s->state = S_WAITING_FOR_START_ACK;
-
-        uint8_t response_buffer[MAX_PACKET_LENGTH];
-        // Koristimo dinamički timeout umjesto fiksnog
-        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, response_timeout);
-        if (response_len > 0) {
-            ProcessResponse(response_buffer, response_len);
-        } else {
-            OnTimeout();
-        }
     }
     else
     {
@@ -563,7 +708,7 @@ void UpdateManager::SendDataPacket()
     
     uint8_t packet[MAX_PACKET_LENGTH]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
-    uint16_t data_len = s->read_chunk_size + 3;
+    uint16_t data_len = s->read_chunk_size + 2; // Payload je [SeqNum_H, SeqNum_L, ...data]
     uint16_t total_packet_length = 9 + data_len;
 
     packet[0] = STX; 
@@ -573,11 +718,10 @@ void UpdateManager::SendDataPacket()
     packet[4] = (rsifa & 0xFF);
     packet[5] = data_len; 
     
-    packet[6] = CMD_UPDATE_DATA;
-    packet[7] = (s->currentSequenceNum >> 8);
-    packet[8] = (s->currentSequenceNum & 0xFF);
+    packet[6] = (s->currentSequenceNum >> 8);
+    packet[7] = (s->currentSequenceNum & 0xFF);
     
-    memcpy(&packet[9], s->read_buffer, s->read_chunk_size);
+    memcpy(&packet[8], s->read_buffer, s->read_chunk_size);
     
     uint16_t checksum = 0;
     for (uint32_t i = 6; i < (6 + data_len); i++) checksum += packet[i];
@@ -598,19 +742,9 @@ void UpdateManager::SendDataPacket()
         }
     }
 
-    if (m_rs485_service->SendPacket(packet, total_packet_length))
-    {
+    if (m_rs485_service->SendPacket(packet, total_packet_length)) {
         s->timeoutStart = millis();
         s->state = S_WAITING_FOR_DATA_ACK;
-
-        uint8_t response_buffer[MAX_PACKET_LENGTH];
-        // Koristimo dinamički timeout umjesto fiksnog
-        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, response_timeout);
-        if (response_len > 0) {
-            ProcessResponse(response_buffer, response_len);
-        } else {
-            OnTimeout();
-        }
     }
     else
     {
@@ -641,18 +775,9 @@ void UpdateManager::SendFinishRequest()
     packet[8] = (checksum & 0xFF);
     packet[9] = EOT;
     
-    if (m_rs485_service->SendPacket(packet, 10))
-    {
+    if (m_rs485_service->SendPacket(packet, 10)) {
         s->timeoutStart = millis();
         s->state = S_WAITING_FOR_FINISH_ACK;
-
-        uint8_t response_buffer[MAX_PACKET_LENGTH];
-        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, UPDATE_PACKET_TIMEOUT_MS);
-        if (response_len > 0) {
-            ProcessResponse(response_buffer, response_len);
-        } else {
-            OnTimeout();
-        }
     }
     else
     {
@@ -687,12 +812,46 @@ void UpdateManager::SendRestartCommand()
     packet[8] = (checksum & 0xFF);
     packet[9] = EOT;
     
-    // Ovdje ne očekujemo odgovor, ali Rs485Service će čekati timeout.
-    // Nakon timeout-a, sesija će se završiti.
+    if (m_rs485_service->SendPacket(packet, 10)) {
+        s->state = S_PENDING_APP_START;
+        s->timeoutStart = millis(); // Pokreni pauzu
+    }
+    else
+    {
+        CleanupSession(true);
+    }
+}
+
+/**
+ * @brief Šalje APP_EXE komandu nakon pauze.
+ */
+void UpdateManager::SendAppExeCommand()
+{
+    UpdateSession* s = &m_session;
+    Serial.println(F("[UpdateManager] Pauza završena. Slanje APP_EXE komande..."));
+    
+    uint8_t packet[32]; 
+    uint16_t rsifa = g_appConfig.rs485_iface_addr;
+    uint16_t data_len = 1;
+
+    packet[0] = SOH;
+    packet[1] = (s->clientAddress >> 8);
+    packet[2] = (s->clientAddress & 0xFF);
+    packet[3] = (rsifa >> 8);
+    packet[4] = (rsifa & 0xFF);
+    packet[5] = data_len;
+    
+    packet[6] = CMD_APP_EXE;
+    
+    uint16_t checksum = CMD_APP_EXE;
+
+    packet[7] = (checksum >> 8);
+    packet[8] = (checksum & 0xFF);
+    packet[9] = EOT;
+    
     if (m_rs485_service->SendPacket(packet, 10))
     {
-        // Ne čekamo odgovor, smatramo uspješnim
-        CleanupSession(false);
+        CleanupSession(false); // Završavamo sesiju, ne čekamo odgovor
     }
     else
     {

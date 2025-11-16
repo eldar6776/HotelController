@@ -61,10 +61,10 @@ void setup()
     Serial.println(F("==================================="));
     
     // --- FAZA 1.5: Inicijalizacija Watchdog-a ---
-    Serial.println(F("[setup] Inicijalizacija Task Watchdog-a..."));
-    esp_task_wdt_init(WDT_TIMEOUT, true); // true = panic (restart) on timeout
-    esp_task_wdt_add(NULL); // Dodaj 'loopTask' (Arduino zadatak) na praćenje
-    Serial.println(F("[setup] Watchdog aktivan."));
+    Serial.println(F("[setup] UPOZORENJE: Task Watchdog je privremeno onemogućen."));
+    // esp_task_wdt_init(WDT_TIMEOUT, true); // true = panic (restart) on timeout
+    // esp_task_wdt_add(NULL); // Dodaj 'loopTask' (Arduino zadatak) na praćenje
+    // Serial.println(F("[setup] Watchdog aktivan."));
 
 
     LOG_DEBUG(5, "[main] Entering setup()...\n");
@@ -113,7 +113,7 @@ void setup()
 void loop() 
 {
     // --- WATCHDOG RESET ---
-    esp_task_wdt_reset(); // Resetuj watchdog tajmer u svakom ciklusu
+    // esp_task_wdt_reset(); // Resetuj watchdog tajmer u svakom ciklusu
 
     // NetworkManager.Loop() se više ne poziva jer je njegova logika prebačena u task
     // koji se ne završava.

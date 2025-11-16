@@ -23,9 +23,9 @@ public:
     TimeSync();
     void Initialize(Rs485Service* pRs485Service);
     void Run();
+    bool IsTimeToSync();
 
 private:
-    bool IsTimeToSync();
     void SendTimeBroadcast();
 
     Rs485Service* m_rs485_service;

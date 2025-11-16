@@ -33,22 +33,45 @@
 #define CMD_RT_DWNLD_LOGO   0x7BU 
 #define CMD_START_BLDR      0x17U // Definicija komande koja nedostaje
 
+// Tajminzi iz common.h za replikaciju originalnog protokola
+#define FWR_COPY_DEL        1567U // Pauza za RC da iskopira novi firmware
+#define IMG_COPY_DEL        4567U // Pauza za RC da iskopira novu sliku
+
 // Globalna konfiguracija (extern)
 extern AppConfig g_appConfig; 
 
-// CRC32 Lookup Table (za brži izračun)
-static const uint32_t crc32_table[256] = {
-    0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3,
-    0x0EDB8832, 0x79DCB8A4, 0xE0D5E91E, 0x97D2D988, 0x09B64C2B, 0x7EB17CBD, 0xE7B82D07, 0x90BF1D91,
-    0x1DB71064, 0x6AB020F2, 0xF3B97148, 0x84BE41DE, 0x1ADAD47D, 0x6DDDE4EB, 0xF4D4B551, 0x83D385C7,
-    0x136C9856, 0x646BA8C0, 0xFD62F97A, 0x8A65C9EC, 0x14015C4F, 0x63066CD9, 0xFA0F3D63, 0x8D080DF5,
-    0x3B6E20C8, 0x4C69105E, 0xD56041E4, 0xA2677172, 0x3C03E4D1, 0x4B04D447, 0xD20D85FD, 0xA50AB56B,
-    0x35B5A8FA, 0x42B2986C, 0xDBBBC9D6, 0xACBCF940, 0x32D86CE3, 0x45DF5C75, 0xDCD60DCF, 0xABD13D59,
-    0x26D930AC, 0x51DE003A, 0xC8D75180, 0xBFD06116, 0x21B4F4B5, 0x56B3C423, 0xCFBA9599, 0xB8BDA50F,
-    0x2802B89E, 0x5F058808, 0xC60CD9B2, 0xB10BE924, 0x2F6F7C87, 0x58684C11, 0xC1611DAB, 0xB6662D3D,
-    // ... (ostali CRC32 table elementi - ukupno 256)
-    // Za kompletnu tabelu, pogledajte artifact gore
-};
+// ============================================================================
+// --- NOVA STM32-KOMPATIBILNA CRC32 IMPLEMENTACIJA ---
+// ============================================================================
+#define CRC32_POLYNOMIAL 0x04C11DB7
+#define STM32_CRC_INITIAL_VALUE 0xFFFFFFFF
+
+/**
+ * @brief Ažurira CRC obradom jedne 32-bitne riječi, imitirajući hardver.
+ */
+static uint32_t crc_update_word(uint32_t crc, uint32_t word) {
+    crc ^= word;
+    for (int i = 0; i < 32; i++) {
+        if (crc & 0x80000000) {
+            crc = (crc << 1) ^ CRC32_POLYNOMIAL;
+        } else {
+            crc <<= 1;
+        }
+    }
+    return crc;
+}
+
+/**
+ * @brief Ažurira CRC vrijednost sa baferom podataka.
+ * Ova implementacija ispravno simulira ponašanje STM32 hardvera.
+ */
+static uint32_t stm32_crc32_update(uint32_t crc, const uint8_t *data, size_t len) {
+    while (len--) {
+        // STM32 CRC hardver obrađuje svaki bajt kao 32-bitnu riječ.
+        crc = crc_update_word(crc, (uint32_t)*data++);
+    }
+    return crc;
+}
 
 UpdateManager::UpdateManager()
 {
@@ -67,23 +90,19 @@ void UpdateManager::Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCa
 
 uint32_t UpdateManager::CalculateCRC32(File& file)
 {
-    uint32_t crc = 0xFFFFFFFF;
+    uint32_t crc = STM32_CRC_INITIAL_VALUE;
     uint8_t buffer[256];
     
     file.seek(0);
     
     while (file.available())
     {
-        int len = file.read(buffer, sizeof(buffer));
-        for (int i = 0; i < len; i++)
-        {
-            uint8_t index = (crc ^ buffer[i]) & 0xFF;
-            crc = (crc >> 8) ^ crc32_table[index];
-        }
+        size_t len = file.read(buffer, sizeof(buffer)); // NOLINT(bugprone-sizeof-expression)
+        crc = stm32_crc32_update(crc, buffer, len);
     }
     
     file.seek(0);
-    return crc ^ 0xFFFFFFFF;
+    return crc; // Vraća konačnu CRC vrijednost bez dodatne XOR operacije
 }
 
 bool UpdateManager::ReadMetadataFromFile(const String& metaFilePath, uint32_t* size, uint32_t* crc)
@@ -133,7 +152,7 @@ bool UpdateManager::PrepareSession(UpdateSession* s, uint8_t updateCmd)
         // KONAČNA ISPRAVKA: Koristi adresu klijenta za formiranje imena fajla
         // s->clientAddress je postavljen prije poziva ove funkcije
         if (s->clientAddress != 0) {
-            filename = "/" + String(s->clientAddress) + "_" + String(img_num) + ".RAW";
+            filename = "/" + String(s->clientAddress) + "/" + String(s->clientAddress) + "_" + String(img_num) + ".RAW";
         } else {
             // Fallback ako adresa nije poznata (ne bi se smjelo desiti za slike)
             filename = "/IMG" + String(img_num) + ".RAW";
@@ -281,7 +300,7 @@ void UpdateManager::Run()
              Serial.printf("[UpdateManager] Greška pri pokretanju sesije za %d_%d.RAW. Preskačem.\n", m_sequence.current_addr, m_sequence.current_img);
              // Odmah prelazimo na sljedeću iteraciju
              CleanupSession(false);
-             ProcessResponse(nullptr, 0); // Pozivamo da bi se pokrenula logika za sljedeću sliku/adresu
+             OnTimeout(); // Pozivamo OnTimeout da bi se pokrenula logika za sljedeću sliku/adresu
         }
         // Ako je StartSession uspio, on će preuzeti kontrolu i pozvati SendStartRequest.
         // Mi ovdje ne radimo ništa više, čekamo da se sesija završi.
@@ -329,20 +348,6 @@ void UpdateManager::Run()
 
 void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
 {
-    // NOVO: Logika za napredovanje sekvence nakon završetka jedne sesije
-    if (m_sequence.is_active) {
-        // Bilo da je uspjelo ili ne, prelazimo na sljedeću sliku/adresu
-        m_sequence.current_img++;
-        if (m_sequence.current_img > m_sequence.last_img) {
-            m_sequence.current_img = m_sequence.first_img;
-            m_sequence.current_addr++;
-        }
-        // Ovdje ne radimo ništa više. Service() će u sljedećem ciklusu pokrenuti novu sesiju.
-        // Resetujemo stanje trenutne sesije.
-        CleanupSession(false);
-        return;
-    }
-
     // Ako paket ne postoji (preskakanje fajla), odmah izađi
     if (packet == nullptr) return;
 
@@ -353,13 +358,14 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
     {
         if (ack_nack == ACK && response_cmd == CMD_UPDATE_START) 
         {
+            Serial.println(F("[UpdateManager] -> Primljen START ACK. Započinjem slanje podataka..."));
             m_session.state = UpdateState::S_SENDING_DATA;
             m_session.retryCount = 0;
             m_session.currentSequenceNum = 1;
         }
         else 
         {
-            Serial.println(F("[UpdateManager] START NACK/GREŠKA."));
+            Serial.printf("[UpdateManager] -> Primljen START NACK ili pogrešan odgovor (ACK: 0x%02X, CMD: 0x%02X). Prekidam.\n", ack_nack, response_cmd);
             CleanupSession(true);
         }
     }
@@ -367,6 +373,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
     {
         if (ack_nack == ACK && response_cmd == CMD_UPDATE_DATA) 
         {
+            Serial.printf("[UpdateManager] -> Primljen DATA ACK za paket #%lu.\n", m_session.currentSequenceNum);
             m_session.retryCount = 0;
             m_session.bytesSent += m_session.read_chunk_size;
 
@@ -395,7 +402,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
         {
             uint32_t requested_seq = (packet[8] << 8) | packet[9]; 
             
-            Serial.printf("[UpdateManager] NACK. Klijent traži paket %lu.\n", requested_seq);
+            Serial.printf("[UpdateManager] -> Primljen NACK. Klijent traži paket %lu.\n", requested_seq);
             
             uint32_t offset = (requested_seq - 1) * UPDATE_DATA_CHUNK_SIZE;
             
@@ -413,7 +420,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
         }
         else
         {
-            Serial.println(F("[UpdateManager] NEOČEKIVAN OGD. Prekid update-a."));
+            Serial.printf("[UpdateManager] -> Primljen NEOČEKIVAN ODGOVOR (ACK: 0x%02X, CMD: 0x%02X). Prekidam.\n", ack_nack, response_cmd);
             CleanupSession(true);
         }
     }
@@ -421,12 +428,12 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
     {
         if (ack_nack == ACK && response_cmd == CMD_UPDATE_FINISH) 
         {
-            Serial.println(F("[UpdateManager] FINISH ACK. Update USPJEŠAN!"));
+            Serial.println(F("[UpdateManager] -> Primljen FINISH ACK. Update USPJEŠAN!"));
             CleanupSession(false);
         }
         else
         {
-            Serial.println(F("[UpdateManager] FINISH NACK/GREŠKA. Update NEUSPJEŠAN."));
+            Serial.printf("[UpdateManager] -> Primljen FINISH NACK ili pogrešan odgovor (ACK: 0x%02X, CMD: 0x%02X). Update NEUSPJEŠAN.\n", ack_nack, response_cmd);
             CleanupSession(true);
         }
     }
@@ -434,18 +441,6 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
 
 void UpdateManager::OnTimeout()
 {
-    // NOVO: Logika za napredovanje sekvence nakon timeout-a
-    if (m_sequence.is_active) {
-        Serial.printf("[UpdateManager] Timeout za adresu %d, slika %d. Prelazim na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
-        m_sequence.current_img++;
-        if (m_sequence.current_img > m_sequence.last_img) {
-            m_sequence.current_img = m_sequence.first_img;
-            m_sequence.current_addr++;
-        }
-        CleanupSession(false);
-        return;
-    }
-
     // Stara logika za pojedinačne sesije
     if (m_session.retryCount >= MAX_UPDATE_RETRIES)
     {
@@ -479,6 +474,7 @@ void UpdateManager::OnTimeout()
 
 void UpdateManager::SendStartRequest()
 {
+    Serial.println(F("[UpdateManager] -> Šaljem START paket..."));
     UpdateSession* s = &m_session;
     uint8_t packet[32]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
@@ -517,13 +513,27 @@ void UpdateManager::SendStartRequest()
     packet[19] = (checksum & 0xFF);
     packet[20] = EOT;
     
+    // REPLIKACIJA TAJMINGA IZ STAROG KODA
+    uint32_t response_timeout = UPDATE_PACKET_TIMEOUT_MS;
+    if (s->type == TYPE_FW_RC || s->type == TYPE_BLDR_RC)
+    {
+        // Za firmware/bootloader, koristi se duža pauza da se omogući brisanje flash-a
+        response_timeout = IMG_COPY_DEL;
+    }
+    else if (s->type == TYPE_IMG_RC)
+    {
+        // Za slike, koristi se kraća pauza
+        response_timeout = FWR_COPY_DEL;
+    }
+
     if (m_rs485_service->SendPacket(packet, 21))
     {
         s->timeoutStart = millis();
         s->state = S_WAITING_FOR_START_ACK;
 
         uint8_t response_buffer[MAX_PACKET_LENGTH];
-        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, UPDATE_PACKET_TIMEOUT_MS);
+        // Koristimo dinamički timeout umjesto fiksnog
+        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, response_timeout);
         if (response_len > 0) {
             ProcessResponse(response_buffer, response_len);
         } else {
@@ -538,6 +548,7 @@ void UpdateManager::SendStartRequest()
 
 void UpdateManager::SendDataPacket()
 {
+    Serial.printf("[UpdateManager] -> Šaljem DATA paket #%lu...\n", m_session.currentSequenceNum);
     UpdateSession* s = &m_session;
     int16_t bytes_read = s->fw_file.read(s->read_buffer, UPDATE_DATA_CHUNK_SIZE);
     
@@ -575,13 +586,26 @@ void UpdateManager::SendDataPacket()
     packet[total_packet_length - 2] = (checksum & 0xFF);
     packet[total_packet_length - 1] = EOT;
     
+    // REPLIKACIJA TAJMINGA IZ STAROG KODA
+    uint32_t response_timeout = UPDATE_PACKET_TIMEOUT_MS;
+    // Provjera da li je ovo zadnji paket
+    if ((s->bytesSent + s->read_chunk_size) >= s->fw_size)
+    {
+        if (s->type == TYPE_FW_RC || s->type == TYPE_BLDR_RC) {
+            response_timeout = IMG_COPY_DEL;
+        } else if (s->type == TYPE_IMG_RC) {
+            response_timeout = FWR_COPY_DEL;
+        }
+    }
+
     if (m_rs485_service->SendPacket(packet, total_packet_length))
     {
         s->timeoutStart = millis();
         s->state = S_WAITING_FOR_DATA_ACK;
 
         uint8_t response_buffer[MAX_PACKET_LENGTH];
-        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, UPDATE_PACKET_TIMEOUT_MS);
+        // Koristimo dinamički timeout umjesto fiksnog
+        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, response_timeout);
         if (response_len > 0) {
             ProcessResponse(response_buffer, response_len);
         } else {
@@ -641,9 +665,6 @@ void UpdateManager::SendFinishRequest()
  */
 void UpdateManager::SendRestartCommand()
 {
-    // Sačekaj da se kontroler resetuje
-    vTaskDelay(pdMS_TO_TICKS(APP_START_DEL));
-
     UpdateSession* s = &m_session;
     Serial.println(F("[UpdateManager] Slanje START_BLDR komande..."));
     
@@ -687,4 +708,19 @@ void UpdateManager::CleanupSession(bool failed /*= false*/)
         m_session.is_read_active = false;
     }
     m_session.state = S_IDLE;
+
+    // NOVO: Logika za napredovanje sekvence nakon završetka jedne sesije
+    if (m_sequence.is_active) {
+        if (failed) {
+            Serial.printf("[UpdateManager] Sesija NEUSPJEŠNA za Adresu %d, Slika %d. Prelazim na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
+        } else {
+            Serial.printf("[UpdateManager] Sesija USPJEŠNA za Adresu %d, Slika %d. Prelazim na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
+        }
+        
+        m_sequence.current_img++;
+        if (m_sequence.current_img > m_sequence.last_img) {
+            m_sequence.current_img = m_sequence.first_img;
+            m_sequence.current_addr++;
+        }
+    }
 }

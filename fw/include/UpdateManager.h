@@ -121,6 +121,11 @@ public:
     bool IsActive();
     bool was_interrupted; // Flag za nastavak
 
+    /**
+     * @brief NOVO: Provjerava da li je sekvencijalni update aktivan.
+     */
+    bool IsSequenceActive();
+
 public:
     // Podržavamo samo jednu sesiju odjednom
     UpdateSession m_session; // Javno zbog HttpServer-a

@@ -126,14 +126,25 @@ void loop()
     // Glavna state-mašina za pozadinske zadatke
     // Prioritet: Update > TimeSync > Polling
     if (g_updateManager.IsActive()) {
-        // Ako je update aktivan, on ima potpuni prioritet
+        // Ako je update (pojedinačni ili sekvencijalni) aktivan, on ima potpuni prioritet.
+        // Run() će odraditi transfer jednog fajla i vratiti kontrolu.
         g_updateManager.Run();
-    } else {
-        // Ako update nije aktivan, provjeri ostale servise
-        // TimeSync se izvršava samo povremeno
-        g_timeSync.Run();
 
-        // Polling se izvršava uvijek kao najniži prioritet
+        // =================================================================================
+        // KONAČNA ISPRAVKA: Logika za pauzu i nastavak sekvence se nalazi OVDJE,
+        // izvan UpdateManager-a, kako bi se osigurao ispravan redoslijed i povratak kontrole.
+        // =================================================================================
+        if (g_updateManager.IsSequenceActive()) {
+            // Nakon što je Run() završio transfer jedne slike, pravimo pauzu.
+            Serial.printf("[main] Pauza od %dms nakon transfera slike...\n", IMG_COPY_DEL);
+            vTaskDelay(pdMS_TO_TICKS(IMG_COPY_DEL));
+
+            // Nakon pauze, resetujemo TimeSync tajmer.
+            g_timeSync.ResetTimer();
+        }
+    } else {
+        // Ako update NIJE aktivan, izvršavaju se redovni pozadinski zadaci.
+        g_timeSync.Run();
         g_logPullManager.Run();
     }
 

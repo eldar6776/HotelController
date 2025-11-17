@@ -213,6 +213,11 @@ bool UpdateManager::IsActive()
     return (m_session.state != S_IDLE || m_sequence.is_active);
 }
 
+bool UpdateManager::IsSequenceActive()
+{
+    return m_sequence.is_active;
+}
+
 void UpdateManager::StartImageUpdateSequence(uint16_t first_addr, uint16_t last_addr, uint8_t first_img, uint8_t last_img)
 {
     if (m_sequence.is_active || m_session.state != S_IDLE) {
@@ -451,10 +456,14 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
         }
         else if (ack_nack == NAK) 
         {
-            uint32_t requested_seq = (packet[8] << 8) | packet[9]; 
-            
-            Serial.printf("[UpdateManager] -> Primljen NACK. Klijent traži paket %lu.\n", requested_seq);
-            
+            // ISPRAVKA: NAK se tretira kao ponovni pokušaj, ali ne resetuje sekvencu.
+            // Povećavamo brojač pokušaja i ostajemo u istom stanju slanja.
+            m_session.retryCount++;
+            Serial.printf("[UpdateManager] -> Primljen NACK. Pokušaj %d od %d...\n", m_session.retryCount, MAX_UPDATE_RETRIES);
+            m_session.state = S_SENDING_DATA; // Vrati stanje da se ponovo pošalje
+            // Vrati fajl na prethodnu poziciju da se isti paket ponovo pročita i pošalje
+            m_session.fw_file.seek(m_session.bytesSent);
+            /* Stara logika za preskakanje na traženi paket - odbačeno radi jednostavnosti i robusnosti
             uint32_t offset = (requested_seq - 1) * UPDATE_DATA_CHUNK_SIZE;
             
             if (!m_session.fw_file.seek(offset))
@@ -468,6 +477,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
             m_session.bytesSent = offset;
             m_session.state = S_SENDING_DATA;
             m_session.retryCount = 0;
+            */
         }
         else
         {
@@ -497,7 +507,6 @@ void UpdateManager::OnTimeout()
 {
     m_session.retryCount++;
     Serial.printf("[UpdateManager] Timeout. Pokušaj %d od %d...\n", m_session.retryCount, MAX_UPDATE_RETRIES);
-    Serial.printf("[UpdateManager] Timeout u stanju [%d]. Pokušaj %d od %d...\n", m_session.state, m_session.retryCount, MAX_UPDATE_RETRIES);
 
     // Vrati stanje na prethodno da bi se ponovo poslao isti paket
     switch(m_session.state) {
@@ -505,6 +514,8 @@ void UpdateManager::OnTimeout()
             m_session.state = S_STARTING;
             break;
         case S_WAITING_FOR_DATA_ACK:
+            // Vrati fajl na prethodnu poziciju da se isti paket ponovo pročita i pošalje
+            m_session.fw_file.seek(m_session.bytesSent);
             m_session.state = S_SENDING_DATA;
             break;
         case S_WAITING_FOR_FINISH_ACK:
@@ -830,27 +841,31 @@ void UpdateManager::CleanupSession(bool failed /*= false*/)
     }
     m_session.state = S_IDLE;
     
-    // Reset TimeSync tajmer nakon završetka update-a (replicira referentni kod rx_tmr = Get_SysTick())
-    extern TimeSync g_timeSync;
-    g_timeSync.ResetTimer();
-
     // NOVO: Logika za napredovanje sekvence nakon završetka jedne sesije
     if (m_sequence.is_active) {
         if (failed) {
-            // =================================================================================
-            // --- KLJUČNA ISPRAVKA: Prekini cijelu sekvencu ako jedna sesija ne uspije ---
-            // Ovo oslobađa UpdateManager i omogućava LogPullManager-u da nastavi s radom.
-            // =================================================================================
-            Serial.printf("[UpdateManager] Sesija NEUSPJEŠNA za Adresu %d, Slika %d. Prekidam cijelu sekvencu.\n", m_sequence.current_addr, m_sequence.current_img);
-            m_sequence.is_active = false;
+            Serial.printf("[UpdateManager] Sesija NEUSPJEŠNA za Adresu %d, Slika %d. Preskačem na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
         } else {
-            // Serial.printf("[UpdateManager] Sesija USPJEŠNA za Adresu %d, Slika %d. Prelazim na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
+            Serial.printf("[UpdateManager] Sesija USPJEŠNA za Adresu %d, Slika %d. Prelazim na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
         }
         
+        // Uvijek inkrementiramo brojače da pređemo na sljedeću stavku.
         m_sequence.current_img++;
         if (m_sequence.current_img > m_sequence.last_img) {
             m_sequence.current_img = m_sequence.first_img;
             m_sequence.current_addr++;
+        }
+
+        // GARANCIJA ZAVRŠETKA: Provjera da li je cijela sekvenca završena.
+        if (m_sequence.current_addr > m_sequence.last_addr) {
+            Serial.println("[UpdateManager] KRAJ SEKVENCIJE: Sve adrese su obrađene.");
+            m_sequence.is_active = false;
+        }
+    } else {
+        if (failed) {
+            Serial.println("[UpdateManager] Sesija (pojedinačna) NEUSPJEŠNA.");
+        } else {
+            Serial.println("[UpdateManager] Sesija (pojedinačna) USPJEŠNA.");
         }
     }
 }

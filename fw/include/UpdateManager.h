@@ -154,6 +154,10 @@ private:
     Rs485Service* m_rs485_service;
     SdCardManager* m_sd_card_manager;
     uint8_t m_last_sent_sub_cmd; // NOVO: Čuva zadnju poslanu sub-komandu (npr. 0x64)
+    
+    // Zastavice za sekvencijalnu logiku
+    bool m_first_image_in_sequence;
+    bool m_session_in_progress;
 };
 
 #endif // UPDATE_MANAGER_H

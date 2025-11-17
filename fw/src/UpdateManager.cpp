@@ -57,6 +57,10 @@ UpdateManager::UpdateManager()
     m_rs485_service = NULL;
     m_sd_card_manager = NULL;
     m_session.is_read_active = false;
+    
+    // Inicijalizuj zastavice za sekvencu
+    m_first_image_in_sequence = true;
+    m_session_in_progress = false;
 }
 
 void UpdateManager::Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCardManager)
@@ -264,20 +268,42 @@ bool UpdateManager::StartSession(uint8_t clientAddress, uint8_t updateCmd)
  */
 void UpdateManager::Run()
 {
-    if (m_sequence.is_active && m_session.state == UpdateState::S_IDLE)
+    if (m_sequence.is_active && m_session.state == UpdateState::S_IDLE && !m_session_in_progress)
     {
+        // Napreduj na sljedeću sliku (osim prvog puta)
+        if (!m_first_image_in_sequence) {
+            Serial.printf("[UpdateManager] Pauza %dms prije sljedeće slike...\n", IMG_COPY_DEL);
+            vTaskDelay(pdMS_TO_TICKS(IMG_COPY_DEL));
+            
+            m_sequence.current_img++;
+            if (m_sequence.current_img > m_sequence.last_img) {
+                m_sequence.current_img = m_sequence.first_img;
+                m_sequence.current_addr++;
+            }
+        }
+        m_first_image_in_sequence = false;
+        
         if (m_sequence.current_addr > m_sequence.last_addr)
         {
-            Serial.println("[UpdateManager] Sekvenca ažuriranja slika ZAVRŠENA.");
+            Serial.println("[UpdateManager] KRAJ SEKVENCIJE: Sve adrese su obrađene.");
             m_sequence.is_active = false;
+            m_first_image_in_sequence = true;
+            m_session_in_progress = false;
             return;
         }
+        
         uint8_t updateCmd = CMD_IMG_RC_START + m_sequence.current_img - 1;
         Serial.printf("[UpdateManager] Pokretanje dijela sekvence: Adresa %d, Slika %d\n", m_sequence.current_addr, m_sequence.current_img);
         if (!StartSession(m_sequence.current_addr, updateCmd))
         {
-             Serial.printf("[UpdateManager] Greška pri pokretanju sesije za %d_%d.RAW. Preskačem.\n", m_sequence.current_addr, m_sequence.current_img);
+             Serial.printf("[UpdateManager] Greška pri pokretanju sesije za %d_%d.RAW.\n", m_sequence.current_addr, m_sequence.current_img);
              CleanupSession(true);
+             m_first_image_in_sequence = true;
+             m_session_in_progress = false;
+        }
+        else
+        {
+            m_session_in_progress = true; // Sesija pokrenuta
         }
     }
 
@@ -289,12 +315,12 @@ void UpdateManager::Run()
     // --- POTPUNO BLOKIRAJUĆA PETLJA ZA UPDATE ---
     // Kada je sesija aktivna, ova petlja preuzima potpunu kontrolu.
     // =================================================================================
-    while (IsActive())
+    while (m_session.state != S_IDLE)
     {
         if (m_session.retryCount >= MAX_UPDATE_RETRIES) {
             Serial.println(F("[UpdateManager] GREŠKA: Previše neuspješnih pokušaja. Update prekinut."));
             CleanupSession(true);
-            continue; // Nastavi na sljedeću iteraciju while petlje (koja će se prekinuti)
+            break;
         }
 
         uint8_t response_buffer[MAX_PACKET_LENGTH];
@@ -343,10 +369,14 @@ void UpdateManager::Run()
                 continue;
 
             default:
-                // S_IDLE, S_COMPLETED_OK, S_FAILED...
-                // U ovim stanjima, samo izađi iz petlje
-                CleanupSession(m_session.state == S_FAILED);
-                continue;
+                // S_IDLE uopšte ne bi trebalo da se desi ovdje jer while provjerava state
+                // Ako se ipak desi, izađi iz petlje
+                if (m_session.state == S_IDLE) {
+                    break;
+                }
+                // Ostala neočekivana stanja
+                CleanupSession(true);
+                break;
         }
 
         // --- FAZA 2: ČEKANJE ODGOVORA ---
@@ -839,27 +869,19 @@ void UpdateManager::CleanupSession(bool failed /*= false*/)
         m_session.fw_file.close();
         m_session.is_read_active = false;
     }
-    m_session.state = S_IDLE;
     
-    // NOVO: Logika za napredovanje sekvence nakon završetka jedne sesije
+    // Reset TimeSync tajmer
+    extern TimeSync g_timeSync;
+    g_timeSync.ResetTimer();
+    
+    // Samo loguj status
     if (m_sequence.is_active) {
         if (failed) {
-            Serial.printf("[UpdateManager] Sesija NEUSPJEŠNA za Adresu %d, Slika %d. Preskačem na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
+            Serial.printf("[UpdateManager] Sesija NEUSPJEŠNA za Adresu %d, Slika %d.\n", m_sequence.current_addr, m_sequence.current_img);
+            m_sequence.is_active = false; // Prekini sekvencu
+            m_first_image_in_sequence = true;
         } else {
-            Serial.printf("[UpdateManager] Sesija USPJEŠNA za Adresu %d, Slika %d. Prelazim na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
-        }
-        
-        // Uvijek inkrementiramo brojače da pređemo na sljedeću stavku.
-        m_sequence.current_img++;
-        if (m_sequence.current_img > m_sequence.last_img) {
-            m_sequence.current_img = m_sequence.first_img;
-            m_sequence.current_addr++;
-        }
-
-        // GARANCIJA ZAVRŠETKA: Provjera da li je cijela sekvenca završena.
-        if (m_sequence.current_addr > m_sequence.last_addr) {
-            Serial.println("[UpdateManager] KRAJ SEKVENCIJE: Sve adrese su obrađene.");
-            m_sequence.is_active = false;
+            Serial.printf("[UpdateManager] Sesija USPJEŠNA za Adresu %d, Slika %d.\n", m_sequence.current_addr, m_sequence.current_img);
         }
     } else {
         if (failed) {
@@ -868,4 +890,7 @@ void UpdateManager::CleanupSession(bool failed /*= false*/)
             Serial.println("[UpdateManager] Sesija (pojedinačna) USPJEŠNA.");
         }
     }
+    
+    m_session.state = S_IDLE;
+    m_session_in_progress = false; // KLJUČNO: Resetuj zastavicu da omogućiš sljedeću sliku
 }

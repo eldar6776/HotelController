@@ -107,3 +107,9 @@ bool TimeSync::IsTimeToSync()
 {
     return (millis() - m_last_sync_time > TIME_BROADCAST_INTERVAL_MS);
 }
+
+void TimeSync::ResetTimer()
+{
+    m_last_sync_time = millis();
+    LOG_DEBUG(4, "[TimeSync] Tajmer resetovan nakon update-a.\n");
+}

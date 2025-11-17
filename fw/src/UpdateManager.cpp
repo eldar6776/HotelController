@@ -11,6 +11,7 @@
 
 #include "UpdateManager.h"
 #include "ProjectConfig.h" 
+#include "TimeSync.h"
 #include <cstring>
 
 // Globalna konfiguracija (extern)
@@ -828,6 +829,10 @@ void UpdateManager::CleanupSession(bool failed /*= false*/)
         m_session.is_read_active = false;
     }
     m_session.state = S_IDLE;
+    
+    // Reset TimeSync tajmer nakon završetka update-a (replicira referentni kod rx_tmr = Get_SysTick())
+    extern TimeSync g_timeSync;
+    g_timeSync.ResetTimer();
 
     // NOVO: Logika za napredovanje sekvence nakon završetka jedne sesije
     if (m_sequence.is_active) {

@@ -24,6 +24,7 @@ public:
     void Initialize(Rs485Service* pRs485Service);
     void Run();
     bool IsTimeToSync();
+    void ResetTimer();
 
 private:
     void SendTimeBroadcast();

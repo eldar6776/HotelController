@@ -376,6 +376,16 @@ void UpdateManager::Run()
         {
             response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, response_timeout);
 
+            // =================================================================================
+            // --- NOVO: Bezuslovni ispis primljenog RAW paketa, po uzoru na Rs485Service ---
+            // =================================================================================
+            if (response_len > 0) {
+                char raw_packet_str[response_len * 3 + 1] = {0};
+                for (int i = 0; i < response_len; i++) {
+                    sprintf(raw_packet_str + strlen(raw_packet_str), "%02X ", response_buffer[i]);
+                }
+                Serial.printf("[UpdateManager] -> RAW Odgovor primljen u %lu ms (%d B): [ %s]\n", millis(), response_len, raw_packet_str);
+            }
             if (response_len > 0) {
                 // Imamo odgovor, obradi ga
                 ProcessResponse(response_buffer, response_len);
@@ -418,19 +428,24 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
 
     if (m_session.state == UpdateState::S_WAITING_FOR_START_ACK)
     {
-        if (ack_nack == ACK && response_cmd == CMD_UPDATE_START) 
+        // =================================================================================
+        // --- KLJUČNA ISPRAVKA: Provjera odgovora na START paket ---
+        // Odgovor mora biti ACK, a komanda u odgovoru mora odgovarati poslanoj start komandi.
+        // Za slike, klijent vraća istu komandu (npr. 0x64), a ne generički CMD_UPDATE_START (0x14).
+        // Za stari FW update, klijent vraća CMD_UPDATE_START (0x14).
+        if (ack_nack == ACK && (response_cmd == m_last_sent_sub_cmd || response_cmd == CMD_UPDATE_START))
         {
             Serial.println(F("[UpdateManager] -> Primljen START ACK. Započinjem slanje podataka..."));
             m_session.state = UpdateState::S_SENDING_DATA;
             m_session.retryCount = 0;
             m_session.currentSequenceNum = 1;
         }
-        else 
+        else
         {
             // ISPRAVKA: Ako dobijemo NAK, ne prekidamo odmah.
             // Tretiramo ga kao timeout da bismo pokrenuli mehanizam za ponovno slanje.
             // Ovo replicira ponašanje starog sistema gdje se `trial` brojač povećava.
-            Serial.printf("[UpdateManager] -> Primljen START NACK (0x%02X) ili pogrešan odgovor (očekivano 0x14, primljeno 0x%02X). Pokrećem ponovni pokušaj...\n", ack_nack, response_cmd);
+            Serial.printf("[UpdateManager] -> Primljen START NACK (0x%02X) ili pogrešan odgovor (očekivano 0x%02X, primljeno 0x%02X). Pokrećem ponovni pokušaj...\n", ack_nack, m_last_sent_sub_cmd, response_cmd);
             OnTimeout();
         }
     }
@@ -612,18 +627,18 @@ void UpdateManager::SendFileStartRequest()
             default:
                 Serial.printf("[UpdateManager] GREŠKA: Nepodržan tip fajla za SendFileStartRequest: %d\n", s->type);
                 CleanupSession(true);
-                return;
+                return; // Vraća void
         }
     }
 
     if (sub_cmd == 0) {
         Serial.println(F("[UpdateManager] GREŠKA: Nije moguće odrediti sub_cmd za sliku."));
         CleanupSession(true);
-        return;
+        return; // Vraća void
     }
-
+    m_last_sent_sub_cmd = sub_cmd; // Sačuvaj poslanu komandu za provjeru odgovora
     packet[0] = SOH;
-    packet[1] = (s->clientAddress >> 8);
+    packet[1] = (s->clientAddress >> 8); // NOLINT
     packet[2] = (s->clientAddress & 0xFF);
     packet[3] = (rsifa >> 8);
     packet[4] = (rsifa & 0xFF);
@@ -846,9 +861,14 @@ void UpdateManager::CleanupSession(bool failed /*= false*/)
     // NOVO: Logika za napredovanje sekvence nakon završetka jedne sesije
     if (m_sequence.is_active) {
         if (failed) {
-            Serial.printf("[UpdateManager] Sesija NEUSPJEŠNA za Adresu %d, Slika %d. Prelazim na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
+            // =================================================================================
+            // --- KLJUČNA ISPRAVKA: Prekini cijelu sekvencu ako jedna sesija ne uspije ---
+            // Ovo oslobađa UpdateManager i omogućava LogPullManager-u da nastavi s radom.
+            // =================================================================================
+            Serial.printf("[UpdateManager] Sesija NEUSPJEŠNA za Adresu %d, Slika %d. Prekidam cijelu sekvencu.\n", m_sequence.current_addr, m_sequence.current_img);
+            m_sequence.is_active = false;
         } else {
-            Serial.printf("[UpdateManager] Sesija USPJEŠNA za Adresu %d, Slika %d. Prelazim na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
+            // Serial.printf("[UpdateManager] Sesija USPJEŠNA za Adresu %d, Slika %d. Prelazim na sljedeću.\n", m_sequence.current_addr, m_sequence.current_img);
         }
         
         m_sequence.current_img++;

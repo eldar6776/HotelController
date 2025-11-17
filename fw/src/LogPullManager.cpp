@@ -13,18 +13,6 @@
 // Globalna konfiguracija (extern)
 extern AppConfig g_appConfig; 
 
-// RS485 Kontrolni Karakteri i Komande
-#define SOH 0x01
-#define EOT 0x04
-#define ACK 0x06 // Primjer ACK statusa
-#define GET_SYS_STAT        0xA0 // CMD za Status Kontrolera (Polling)
-#define DEL_LOG_LIST        0xD3 // NOVO: CMD za brisanje loga
-#define GET_LOG_LIST        0xA3 // CMD za Dohvat Loga (Log Pull)
-
-// Definicija tajminga iz starog projekta (common.h)
-#define RX2TX_DEL_MS 3 // Originalna vrednost: RX2TX_DEL (3U)
-
-
 LogPullManager::LogPullManager() :
     m_rs485_service(NULL),
     m_eeprom_storage(NULL),

@@ -47,9 +47,6 @@ enum class SystemState {
 };
 SystemState g_systemState = SystemState::RUN_POLLING; // Počinjemo sa pollingom
 
-// --- WATCHDOG KONFIGURACIJA ---
-#define WDT_TIMEOUT 10 // 10 sekundi
-
 void setup() 
 {
     

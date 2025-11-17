@@ -20,7 +20,6 @@ extern AppConfig g_appConfig;
 // --- STM32 CRC32 HARDWARE-LIKE SOFTWARE IMPLEMENTATION ---
 // Replicating the exact logic from the provided stm32_crc.c file.
 // ============================================================================
-#define CRC32_POLYNOMIAL 0x04C11DB7
 
 /**
  * @brief Updates the CRC by processing a single 32-bit word, mimicking the hardware.
@@ -403,12 +402,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
 
     if (m_session.state == UpdateState::S_WAITING_FOR_START_ACK)
     {
-        // =================================================================================
-        // --- KLJUČNA ISPRAVKA: Provjera odgovora na START paket ---
-        // Odgovor mora biti ACK, a komanda u odgovoru mora odgovarati poslanoj start komandi.
-        // Za slike, klijent vraća istu komandu (npr. 0x64), a ne generički CMD_UPDATE_START (0x14).
-        // Za stari FW update, klijent vraća CMD_UPDATE_START (0x14).
-        if (ack_nack == ACK && (response_cmd == m_last_sent_sub_cmd || response_cmd == CMD_UPDATE_START))
+        if (ack_nack == ACK)
         {
             Serial.println(F("[UpdateManager] -> Primljen START ACK. Započinjem slanje podataka..."));
             m_session.state = UpdateState::S_SENDING_DATA;
@@ -426,7 +420,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
     }
     else if (m_session.state == UpdateState::S_WAITING_FOR_DATA_ACK)
     {
-        if (ack_nack == ACK && response_cmd == CMD_UPDATE_DATA) 
+        if (ack_nack == ACK) 
         {
             Serial.printf("[UpdateManager] -> Primljen DATA ACK za paket #%lu.\n", m_session.currentSequenceNum);
             m_session.retryCount = 0;
@@ -452,7 +446,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
                 m_session.state = S_SENDING_DATA;
             }
         }
-        else if (ack_nack == NAK && response_cmd == CMD_UPDATE_DATA) 
+        else if (ack_nack == NAK) 
         {
             uint32_t requested_seq = (packet[8] << 8) | packet[9]; 
             
@@ -481,7 +475,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
     else if (m_session.state == UpdateState::S_WAITING_FOR_FINISH_ACK)
     
     {
-        if (ack_nack == ACK && response_cmd == CMD_UPDATE_FINISH) 
+        if (ack_nack == ACK) 
         {
             Serial.println(F("[UpdateManager] -> Primljen FINISH ACK. Update USPJEŠAN!"));
             CleanupSession(false);
@@ -732,7 +726,7 @@ void UpdateManager::SendFinishRequest()
     packet[4] = (rsifa & 0xFF);
     packet[5] = data_len;
     
-    packet[6] = CMD_UPDATE_FINISH;
+    packet[6] = m_last_sent_sub_cmd;
     
     uint16_t checksum = 0;
     for (uint32_t i = 6; i < (6 + data_len); i++) checksum += packet[i];

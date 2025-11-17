@@ -29,14 +29,6 @@
 extern AppConfig g_appConfig;
 extern NetworkManager g_networkManager; // Potrebno za Eth/RS485 restart
 
-// CMD-ovi za Update (iz httpd_cgi_ssi.c)
-#define CMD_DWNLD_FWR_IMG 0x77U  // fuf
-#define CMD_DWNLD_BLDR_IMG 0x78U // buf
-#define CMD_RT_DWNLD_FWR 0x79U   // tuf
-#define CMD_RT_DWNLD_BLDR 0x7AU  // tub
-#define CMD_RT_DWNLD_LOGO 0x7BU  // tlg
-#define CMD_OLD_UPDATE_FWR 0x17  // cud
-
 HttpServer::HttpServer() : m_server(80)
 {
     // Konstruktor

@@ -67,41 +67,70 @@
 #define NAK     ((char)0x15U)    /* negative acknowledge control char   */
 
 //=============================================================================
-// 3. GLOBALNE KONSTANTE SISTEMA (Nepromijenjeno)
+// 3. SISTEMSKE KONSTANTE
 //=============================================================================
 
-// --- RS485 Protokol ---
+// --- Watchdog ---
+#define WDT_TIMEOUT                 10  // 10 sekundi
+
+// --- CRC32 ---
+#define CRC32_POLYNOMIAL            0x04C11DB7
+
+// --- Bus Watchdog ---
+#define BUS_WATCHDOG_TIMEOUT_MS     5000
+
+// --- Ping Watchdog ---
+#define PING_INTERVAL_MS            60000
+#define MAX_PING_FAILURES           10
+
+//=============================================================================
+// 4. RS485 PROTOKOL KONSTANTE
+//=============================================================================
+
+// --- Osnovno ---
 #define RS485_BAUDRATE              115200
 #define MAX_PACKET_LENGTH           256    
 #define RS485_BUFFER_SIZE           MAX_PACKET_LENGTH
 #define RS485_TIMEOUT_MS            300
-#define MAX_RS485_RETRIES           3    // NOVO: Maksimalan broj ponovnih slanja u slučaju timeout-a
-#define RS485_RESP_TOUT_MS          45 // Originalna vrednost: RESP_TOUT (45U)
+#define MAX_RS485_RETRIES           3
+#define RS485_RESP_TOUT_MS          45
+#define RX2TX_DEL_MS                3
 
-// --- Polling i Logovanje ---
+// --- TimeSync Komande ---
+#define SET_RTC_DATE_TIME           0xEE
+#define RTC_PACKET_LENGTH           17
+
+// --- LogPull Komande ---
+#define GET_SYS_STAT                0xA0
+#define DEL_LOG_LIST                0xD3
+#define GET_LOG_LIST                0xA3
+
+//=============================================================================
+// 5. GLOBALNE KONSTANTE SISTEMA
+//=============================================================================
 #define MAX_ADDRESS_LIST_SIZE       500
-#define LOG_ENTRY_SIZE              16 // ISPRAVKA: Usklađeno sa starim sistemom (LOG_DSIZE)
+#define LOG_ENTRY_SIZE              16
 #define MAX_LOG_ENTRIES             512
 #define STATUS_BYTE_VALID           0x55
 #define STATUS_BYTE_EMPTY           0xFF
 #define LOG_RECORD_SIZE             (LOG_ENTRY_SIZE + 1)
 
 // --- TimeSync / NTP ---
-#define TIME_BROADCAST_INTERVAL_MS  6789 // Originalna vrednost: RTC_UPD_TIME (6789U)
+#define TIME_BROADCAST_INTERVAL_MS  6789
 #define TIMEZONE_STRING             "CET-1CEST,M3.5.0/2,M10.5.0/3"
 #define NTP_SERVER_1                "hr.pool.ntp.org"
 #define NTP_SERVER_2                "ba.pool.ntp.org"
 
 // --- Update Manager ---
-#define MAX_UPDATE_RETRIES          30 // Originalna vrednost: MAXREP_CNT (30U)
-#define UPDATE_PACKET_TIMEOUT_MS    45 // Timeout za DATA pakete, prema specifikaciji starog sistema
+#define MAX_UPDATE_RETRIES          30
+#define UPDATE_PACKET_TIMEOUT_MS    45
 #define UPDATE_DATA_CHUNK_SIZE      128
-#define APP_START_DEL               12345 // Originalna vrednost: APP_START_DEL (12345U)
-#define FWR_COPY_DEL                1567U // Pauza za RC da iskopira novi firmware (iz common.h)
-#define IMG_COPY_DEL                4567U // Pauza za RC da iskopira novu sliku (iz common.h)
+#define APP_START_DEL               12345
+#define FWR_COPY_DEL                1567U
+#define IMG_COPY_DEL                4567U
 
 //=============================================================================
-// 4. RS485 KOMANDE (iz common.h)
+// 6. RS485 KOMANDE (iz common.h)
 //=============================================================================
 
 // --- Room Controller Komande ---
@@ -155,14 +184,11 @@
 #define CMD_IMG_RC_END                  DWNLD_DISP_IMG_14 // 0x71
 #define CMD_IMG_COUNT                   (CMD_IMG_RC_END - CMD_IMG_RC_START + 1)
 
-// CMD-ovi za interne Update Protokol state machine (nisu direktno iz common.h, već interna imena)
-// NAPOMENA: Ove komande se koriste za procesiranje odgovora, a ne šalju se direktno
-#define CMD_UPDATE_START                0x14 
-#define CMD_UPDATE_DATA                 0x15 
-#define CMD_UPDATE_FINISH               0x16 
+// --- HttpServer Update Komande ---
+#define CMD_OLD_UPDATE_FWR              0x17  // cud
 
 //=============================================================================
-// 5. MEMORIJSKA MAPA EEPROM-a (DINAMIČKA - Nepromijenjeno)
+// 7. MEMORIJSKA MAPA EEPROM-a (DINAMIČKA)
 //=============================================================================
 
 #define EEPROM_CONFIG_START_ADDR        0x0000

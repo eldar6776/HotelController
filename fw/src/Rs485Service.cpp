@@ -14,9 +14,6 @@
 // Globalna konfiguracija (treba biti ucitana u EepromStorage::Initialize)
 extern AppConfig g_appConfig;
 
-// NOVO: Definicija timeout-a za watchdog
-#define BUS_WATCHDOG_TIMEOUT_MS 5000
-
 Rs485Service::Rs485Service() : m_rs485_serial(2) // Koristi UART2 (Serial2)
 {
 }

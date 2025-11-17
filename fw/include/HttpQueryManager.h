@@ -19,11 +19,6 @@
 #include "ProjectConfig.h" 
 
 // Komande (preuzete iz httpd_cgi_ssi.c i hotel_ctrl.c)
-#define SOH 0x01
-#define EOT 0x04
-#define ACK 0x06 // <- ISPRAVKA: Dodano
-#define NAK 0x15 // <- ISPRAVKA: Dodano
-
 #define RESTART_CTRL 0xC0 // (rst)
 #define GET_APPL_STAT 0xA1 // (cst)
 #define SET_APPL_STAT 0xD5 // (stg)

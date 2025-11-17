@@ -14,12 +14,6 @@
 // Globalna konfiguracija (extern)
 extern AppConfig g_appConfig; 
 
-// RS485 Kontrolni Karakteri i Komanda
-#define SOH 0x01
-#define EOT 0x04
-#define SET_RTC_DATE_TIME 0xEE // Primjer komande iz main.cpp/hotel_ctrl.c logike
-#define RTC_PACKET_LENGTH 17   // 8 bajtova podataka + 9 bajtova zaglavlja
-
 // Helper funkcija za konverziju uint8_t u BCD format (kao u izvornom main.cpp/hotel_ctrl.c)
 static uint8_t toBCD(uint8_t val)
 {

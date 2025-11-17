@@ -33,10 +33,6 @@ extern TimeSync g_timeSync;
 extern AppConfig g_appConfig; 
 WiFiManager g_wifiManager;
 
-// Konstante preuzete iz ProjectConfig.h
-#define MAX_PING_FAILURES 10 
-#define PING_INTERVAL_MS 60000 
-
 NetworkManager::NetworkManager() : 
     m_eth_connected(false),
     m_wifi_connected(false),

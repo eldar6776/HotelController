@@ -277,8 +277,15 @@ String SdCardManager::ListFiles(const char* path)
         }
         first = false;
         
+        // Kreiramo punu putanju za fajl
+        String fullPath = String(path);
+        if (!fullPath.endsWith("/")) fullPath += "/";
+        fullPath += String(file.name());
+        
         output += "{\"name\":\"";
         output += String(file.name());
+        output += "\",\"path\":\"";
+        output += fullPath;  // Dodajemo punu putanju
         output += "\",\"size\":";
         output += String(file.size());
         output += ",\"dir\":";

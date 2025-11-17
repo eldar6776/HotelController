@@ -429,15 +429,17 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
             if (m_session.bytesSent >= m_session.fw_size)
             {
                 // REPLIKACIJA STAROG PROTOKOLA:
-                // Ako je ovo bio firmware update, ne šaljemo FINISH, već se pripremamo za START_BLDR
+                // - Za firmware update: šalje se START_BLDR komanda nakon zadnjeg DATA paketa
+                // - Za image update: zadnji DATA paket je FINALNI - nema dodatnog FINISH paketa!
                 if (m_session.type == TYPE_FW_RC)
                 {   
                     Serial.println(F("[UpdateManager] Slanje FW fajla završeno. Prelazim na slanje START_BLDR komande."));
                     m_session.state = S_SENDING_RESTART_CMD;
                 }
-                else // Za sve ostale tipove (slike, itd.), koristi se standardni FINISH
+                else // Za slike - zadnji DATA ACK je kraj, ne šalje se FINISH
                 {
-                    m_session.state = S_FINISHING;
+                    Serial.println(F("[UpdateManager] -> Slanje slike ZAVRŠENO. Zadnji DATA ACK primljen."));
+                    CleanupSession(false);
                 }
             }
             else

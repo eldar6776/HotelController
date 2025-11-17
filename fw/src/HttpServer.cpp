@@ -21,6 +21,7 @@
 #include "SdCardManager.h"
 #include "log_html.h" // SSI Template
 #include "HttpResponseStrings.h" // NOVO: Uključujemo centralizovane stringove
+#include <SD.h>
 #include <cstring>
 #include <time.h>
 #include <pgmspace.h>
@@ -953,9 +954,9 @@ void HttpServer::HandleFileUpload(AsyncWebServerRequest *request, String filenam
     }
 
     String destPath = "";
-    if (request->hasParam("file", true))
+    if (request->hasParam("file"))
     {
-        destPath = request->getParam("file", true)->value();
+        destPath = request->getParam("file")->value();
     }
     else
     {
@@ -965,33 +966,48 @@ void HttpServer::HandleFileUpload(AsyncWebServerRequest *request, String filenam
     // Osiguraj da putanja uvijek počinje s '/'
     if (!destPath.startsWith("/")) { destPath = "/" + destPath; }
 
-    static File uploadFile;
-
     if (index == 0)
     {
         Serial.printf("[HttpServer] Započeo upload: %s -> %s\n", filename.c_str(), destPath.c_str());
 
-        uploadFile = m_sd_card_manager->CreateFile(destPath.c_str());
-
-        if (!uploadFile)
+        // Obriši postojeći fajl ako postoji
+        if (SD.exists(destPath.c_str()))
+        {
+            SD.remove(destPath.c_str());
+        }
+        
+        // Kreiraj prazan fajl (FILE_WRITE kreira ili overwrite-uje fajl)
+        File f = SD.open(destPath.c_str(), "w");
+        if (!f)
         {
             Serial.println(F("[HttpServer] Greška pri kreiranju fajla!"));
             return;
         }
+        f.close();
+        Serial.printf("[SdCard] Kreiran novi fajl '%s'.\n", destPath.c_str());
     }
 
-    if (len > 0 && uploadFile)
+    if (len > 0)
     {
+        // Otvori fajl u append modu za svaki chunk
+        File uploadFile = SD.open(destPath.c_str(), "a");
+        if (!uploadFile)
+        {
+            Serial.printf("[HttpServer] Greška otvaranja fajla za pisanje!\n");
+            return;
+        }
+        
         size_t written = uploadFile.write(data, len);
+        uploadFile.close();
+        
         if (written != len)
         {
             Serial.printf("[HttpServer] Greška pisanja: %d/%d bytes\n", written, len);
         }
     }
 
-    if (final && uploadFile)
+    if (final)
     {
-        uploadFile.close();
         Serial.printf("[HttpServer] Upload završen: %s (%lu bytes)\n", destPath.c_str(), index + len);
     }
 }

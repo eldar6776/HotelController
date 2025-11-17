@@ -310,7 +310,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                         deleteBtn.className = 'delete-btn';
                         deleteBtn.textContent = '✕ Obriši';
                         deleteBtn.onclick = function() {
-                            delete_file(file.name);
+                            delete_file(file.path || file.name);  // Koristi punu putanju ako postoji
                         };
                         
                         fileItem.appendChild(fileSize);

@@ -13,31 +13,6 @@
 #include "ProjectConfig.h" 
 #include <cstring>
 
-// RS485 Kontrolni Karakteri i Komande
-#define SOH 0x01
-#define STX 0x02
-#define EOT 0x04
-#define ACK 0x06
-#define NAK 0x15
-
-// CMD-ovi za Update Protokol (interno, ne šalju se direktno)
-#define CMD_UPDATE_START    0x14 
-#define CMD_UPDATE_DATA     0x15 
-#define CMD_UPDATE_FINISH   0x16 
-
-// Komande koje se šalju na RS485 (iz common.h) - ISPRAVLJENE VRIJEDNOSTI
-#define CMD_DWNLD_FWR_IMG   0xBFU // Originalno: DWNLD_FWR
-#define CMD_DWNLD_BLDR_IMG  0xC2U // Originalno: UPDATE_BLDR
-#define CMD_START_BLDR      0xBCU
-#define CMD_APP_EXE         0xBBU
-#define CMD_RT_DWNLD_FWR    0x79U 
-#define CMD_RT_DWNLD_BLDR   0x7AU
-#define CMD_RT_DWNLD_LOGO   0x7BU
-
-// Tajminzi iz common.h za replikaciju originalnog protokola
-#define FWR_COPY_DEL        1567U // Pauza za RC da iskopira novi firmware
-#define IMG_COPY_DEL        4567U // Pauza za RC da iskopira novu sliku
-
 // Globalna konfiguracija (extern)
 extern AppConfig g_appConfig; 
 
@@ -330,7 +305,7 @@ void UpdateManager::Run()
                 } else {
                     SendFileStartRequest();
                 }
-                response_timeout = 500; // Uvijek čekaj 500ms nakon START paketa
+                response_timeout = 1300; // Pauza 1300ms (1171ms stvarno čekanje + 129ms rezerve)
                 break;
 
             case S_SENDING_DATA:

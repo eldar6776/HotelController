@@ -12,14 +12,7 @@
 #include "EepromStorage.h" // Za g_appConfig
 
 // Globalna konfiguracija (treba biti ucitana u EepromStorage::Initialize)
-extern AppConfig g_appConfig; 
-
-// RS485 Kontrolni Karakteri
-#define SOH 0x01
-#define STX 0x02
-#define ACK 0x06 // ISPRAVKA: Vraćeno - Neophodno za validaciju odgovora
-#define NAK 0x15 // ISPRAVKA: Vraćeno - Neophodno za validaciju odgovora
-#define EOT 0x04
+extern AppConfig g_appConfig;
 
 // NOVO: Definicija timeout-a za watchdog
 #define BUS_WATCHDOG_TIMEOUT_MS 5000

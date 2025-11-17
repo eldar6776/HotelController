@@ -70,11 +70,6 @@ enum UpdateType
     TYPE_BLDR_TH    
 };
 
-// Makroi za komande slika (preuzeto iz common.h)
-#define CMD_IMG_RC_START    0x64U // DWNLD_DISP_IMG_1
-#define CMD_IMG_RC_END      0x71U // DWNLD_DISP_IMG_14
-#define CMD_IMG_COUNT       (CMD_IMG_RC_END - CMD_IMG_RC_START + 1)
-
 // Sesija iz 'update_manager.c' - REFAKTORISANA
 struct UpdateSession
 {

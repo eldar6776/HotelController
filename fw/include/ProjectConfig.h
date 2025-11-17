@@ -56,7 +56,18 @@
 #define DWIN_TX_PIN         1   // (P1 Pin 2: UATX)
 
 //=============================================================================
-// 2. GLOBALNE KONSTANTE SISTEMA (Nepromijenjeno)
+// 2. ASCII KONTROLNI KARAKTERI (iz common.h) - SAMO ONI KOJI SE KORISTE
+//=============================================================================
+// NAPOMENA: Većina ASCII kontrolnih karaktera nije potrebna za ESP32 projekat
+// Uključeni su samo SOH, STX, EOT, ACK, NAK koji se koriste u RS485 protokolu
+#define SOH     ((char)0x01U)    /* start of header control character   */
+#define STX     ((char)0x02U)    /* start of text control character     */
+#define EOT     ((char)0x04U)    /* end of transmission control char    */
+#define ACK     ((char)0x06U)    /* acknowledge control character       */
+#define NAK     ((char)0x15U)    /* negative acknowledge control char   */
+
+//=============================================================================
+// 3. GLOBALNE KONSTANTE SISTEMA (Nepromijenjeno)
 //=============================================================================
 
 // --- RS485 Protokol ---
@@ -86,13 +97,72 @@
 #define UPDATE_PACKET_TIMEOUT_MS    45 // Timeout za DATA pakete, prema specifikaciji starog sistema
 #define UPDATE_DATA_CHUNK_SIZE      128
 #define APP_START_DEL               12345 // Originalna vrednost: APP_START_DEL (12345U)
-
-// --- Ping Watchdog ---
-#define PING_INTERVAL_MS            60000
-#define MAX_PING_FAILURES           10
+#define FWR_COPY_DEL                1567U // Pauza za RC da iskopira novi firmware (iz common.h)
+#define IMG_COPY_DEL                4567U // Pauza za RC da iskopira novu sliku (iz common.h)
 
 //=============================================================================
-// 3. MEMORIJSKA MAPA EEPROM-a (DINAMIČKA - Nepromijenjeno)
+// 4. RS485 KOMANDE (iz common.h)
+//=============================================================================
+
+// --- Room Controller Komande ---
+#define COPY_DISP_IMG                   ((uint8_t)0x63U)
+#define DWNLD_DISP_IMG 		            ((uint8_t)0x63U)    
+#define DWNLD_DISP_IMG_1 		        ((uint8_t)0x64U)
+#define DWNLD_DISP_IMG_2 		        ((uint8_t)0x65U)
+#define DWNLD_DISP_IMG_3 		        ((uint8_t)0x66U)
+#define DWNLD_DISP_IMG_4 		        ((uint8_t)0x67U)
+#define DWNLD_DISP_IMG_5 		        ((uint8_t)0x68U)
+#define DWNLD_DISP_IMG_6 		        ((uint8_t)0x69U)
+#define DWNLD_DISP_IMG_7 		        ((uint8_t)0x6AU)
+#define DWNLD_DISP_IMG_8 		        ((uint8_t)0x6BU)
+#define DWNLD_DISP_IMG_9 		        ((uint8_t)0x6CU)
+#define DWNLD_DISP_IMG_10		        ((uint8_t)0x6DU)
+#define DWNLD_DISP_IMG_11		        ((uint8_t)0x6EU)
+#define DWNLD_DISP_IMG_12		        ((uint8_t)0x6FU)
+#define DWNLD_DISP_IMG_13		        ((uint8_t)0x70U)
+#define DWNLD_DISP_IMG_14		        ((uint8_t)0x71U)
+#define DWNLD_DISP_IMG_15		        ((uint8_t)0x72U)
+#define DWNLD_DISP_IMG_16		        ((uint8_t)0x73U)
+#define DWNLD_DISP_IMG_17		        ((uint8_t)0x74U)
+#define DWNLD_DISP_IMG_18		        ((uint8_t)0x75U)
+#define DWNLD_DISP_IMG_19		        ((uint8_t)0x76U)
+#define DWNLD_DISP_IMG_20               ((uint8_t)0x77U)
+#define DWNLD_DISP_IMG_21               ((uint8_t)0x78U)
+#define DWNLD_DISP_IMG_22		        ((uint8_t)0x79U)
+#define DWNLD_DISP_IMG_23		        ((uint8_t)0x7AU)
+#define DWNLD_DISP_IMG_24               ((uint8_t)0x7BU)
+#define DWNLD_DISP_IMG_25               ((uint8_t)0x7CU)
+
+// Aliasi za firmware update komande (iz common.h)
+#define DWNLD_FWR_IMG                   DWNLD_DISP_IMG_20
+#define DWNLD_BLDR_IMG                  DWNLD_DISP_IMG_21
+#define RT_DWNLD_FWR                    DWNLD_DISP_IMG_22
+#define RT_DWNLD_BLDR                   DWNLD_DISP_IMG_23  
+#define RT_DWNLD_LOGO                   DWNLD_DISP_IMG_24  
+#define RT_DWNLD_LANG                   DWNLD_DISP_IMG_25
+
+// Komande za slanje prema Room Controlleru (iz common.h)
+#define CMD_DWNLD_FWR_IMG               ((uint8_t)0xBFU) // DWNLD_FWR
+#define CMD_DWNLD_BLDR_IMG              ((uint8_t)0xC2U) // UPDATE_BLDR
+#define CMD_START_BLDR                  ((uint8_t)0xBCU)
+#define CMD_APP_EXE                     ((uint8_t)0xBBU)
+#define CMD_RT_DWNLD_FWR                RT_DWNLD_FWR
+#define CMD_RT_DWNLD_BLDR               RT_DWNLD_BLDR
+#define CMD_RT_DWNLD_LOGO               RT_DWNLD_LOGO
+
+// Opseg slika za Room Controller (koristi se u UpdateManager.h)
+#define CMD_IMG_RC_START                DWNLD_DISP_IMG_1 // 0x64
+#define CMD_IMG_RC_END                  DWNLD_DISP_IMG_14 // 0x71
+#define CMD_IMG_COUNT                   (CMD_IMG_RC_END - CMD_IMG_RC_START + 1)
+
+// CMD-ovi za interne Update Protokol state machine (nisu direktno iz common.h, već interna imena)
+// NAPOMENA: Ove komande se koriste za procesiranje odgovora, a ne šalju se direktno
+#define CMD_UPDATE_START                0x14 
+#define CMD_UPDATE_DATA                 0x15 
+#define CMD_UPDATE_FINISH               0x16 
+
+//=============================================================================
+// 5. MEMORIJSKA MAPA EEPROM-a (DINAMIČKA - Nepromijenjeno)
 //=============================================================================
 
 #define EEPROM_CONFIG_START_ADDR        0x0000
@@ -102,8 +172,12 @@
 #define EEPROM_LOG_START_ADDR           (EEPROM_ADDRESS_LIST_START_ADDR + EEPROM_ADDRESS_LIST_SIZE)
 #define EEPROM_LOG_AREA_SIZE            (MAX_LOG_ENTRIES * LOG_RECORD_SIZE)
 
+// --- Ping Watchdog (vraćeno na mjesto) ---
+#define PING_INTERVAL_MS            60000
+#define MAX_PING_FAILURES           10
+
 //=============================================================================
-// 4. FILESYSTEM PATHS (uSD kartica - Nepromijenjeno)
+// 6. FILESYSTEM PATHS (uSD kartica - Nepromijenjeno)
 //=============================================================================
 
 // Firmware fajlovi
@@ -121,7 +195,7 @@
 #define PATH_UPDATE_CFG     "/UPDATE.CFG"
 
 //=============================================================================
-// 5. DEFAULTNE SISTEMSKE VRIJEDNOSTI (Preuzeto iz common.h)
+// 7. DEFAULTNE SISTEMSKE VRIJEDNOSTI (Preuzeto iz common.h)
 //=============================================================================
 //
 
@@ -150,7 +224,7 @@
 
 
 //=============================================================================
-// 6. NAPOMENE ZA RAZVOJ (Stari Obrisani Makroi)
+// 8. NAPOMENE ZA RAZVOJ (Stari Obrisani Makroi)
 //=============================================================================
 
 // ... (ostatak fajla)

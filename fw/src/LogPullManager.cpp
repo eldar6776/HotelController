@@ -64,11 +64,14 @@ void LogPullManager::Initialize(Rs485Service* pRs485Service, EepromStorage* pEep
  */
 void LogPullManager::Run()
 {
-    // KORAK 1: Provjera da li je prošla obavezna pauza (RX2TX_DEL)
+    // ========================================================================
+    // --- IMPLEMENTACIJA OBAVEZNE RX->TX PAUZE (3ms) ---
+    // ========================================================================
     if (millis() - m_last_activity_time < RX2TX_DEL_MS)
     {
         return; // Još nije prošlo 3ms, ne radi ništa, izađi odmah.
     }
+    // ========================================================================
 
     // KORAK 2: Ako čekamo odgovor, provjeri da li je stigao.
     if (m_state == PullState::WAITING_FOR_RESPONSE)
@@ -82,7 +85,7 @@ void LogPullManager::Run()
         } else {
             // Timeout. Vrati se u IDLE stanje i pripremi za sljedeću adresu.
             LOG_DEBUG(4, "[LogPull] Timeout za adresu 0x%X. Prelazim na sljedeću.\n", m_current_pull_address);
-            m_state = PullState::IDLE;
+            m_state = PullState::IDLE; // Vrati se u IDLE
             m_last_activity_time = millis(); // Zabilježi vrijeme neuspjeha
         }
         return;

@@ -284,121 +284,134 @@ bool UpdateManager::StartSession(uint8_t clientAddress, uint8_t updateCmd)
  */
 void UpdateManager::Run()
 {
-    // NOVO: Logika za pokretanje sekvence
     if (m_sequence.is_active && m_session.state == UpdateState::S_IDLE)
     {
-        // Provjeri jesmo li završili cijelu sekvencu
         if (m_sequence.current_addr > m_sequence.last_addr)
         {
             Serial.println("[UpdateManager] Sekvenca ažuriranja slika ZAVRŠENA.");
             m_sequence.is_active = false;
             return;
         }
-
-        // Pokreni sesiju za trenutnu adresu i sliku
         uint8_t updateCmd = CMD_IMG_RC_START + m_sequence.current_img - 1;
         Serial.printf("[UpdateManager] Pokretanje dijela sekvence: Adresa %d, Slika %d\n", m_sequence.current_addr, m_sequence.current_img);
         if (!StartSession(m_sequence.current_addr, updateCmd))
         {
-             // Greška pri pokretanju (npr. fajl ne postoji), preskoči na sljedeću sliku
              Serial.printf("[UpdateManager] Greška pri pokretanju sesije za %d_%d.RAW. Preskačem.\n", m_sequence.current_addr, m_sequence.current_img);
-             // Odmah prelazimo na sljedeću iteraciju
-             CleanupSession(false);
-             OnTimeout(); // Pozivamo OnTimeout da bi se pokrenula logika za sljedeću sliku/adresu
+             CleanupSession(true);
         }
-        // Ako je StartSession uspio, on će preuzeti kontrolu i pozvati SendStartRequest.
-        // Mi ovdje ne radimo ništa više, čekamo da se sesija završi.
     }
 
-    if (m_session.state == UpdateState::S_IDLE)
-    {
-        // Ako nemamo posla, ne radimo ništa.
+    if (!IsActive()) {
         return;
     }
 
-    // Specijalni tajmer za pauzu prije slanja APP_EXE (nakon START_BLDR)
-    if (m_session.state == UpdateState::S_PENDING_APP_START)
+    // =================================================================================
+    // --- POTPUNO BLOKIRAJUĆA PETLJA ZA UPDATE ---
+    // Kada je sesija aktivna, ova petlja preuzima potpunu kontrolu.
+    // =================================================================================
+    while (IsActive())
     {
-        if (millis() - m_session.timeoutStart >= APP_START_DEL) {
-            SendAppExeCommand(); // Pauza je gotova, šalji APP_EXE
+        if (m_session.retryCount >= MAX_UPDATE_RETRIES) {
+            Serial.println(F("[UpdateManager] GREŠKA: Previše neuspješnih pokušaja. Update prekinut."));
+            CleanupSession(true);
+            continue; // Nastavi na sljedeću iteraciju while petlje (koja će se prekinuti)
         }
-        return; // Čekaj da pauza istekne
-    }
 
-    // NOVO: Centralizovana logika za čekanje odgovora
-    if (m_session.state == S_WAITING_FOR_START_ACK ||
-        m_session.state == S_WAITING_FOR_DATA_ACK ||
-        m_session.state == S_WAITING_FOR_FINISH_ACK)
-    {
         uint8_t response_buffer[MAX_PACKET_LENGTH];
-        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, 0); // 0 = non-blocking
+        int response_len = 0;
+        uint32_t response_timeout = 0;
 
-        if (response_len > 0)
+        // --- FAZA 1: SLANJE ---
+        switch (m_session.state)
         {
-            ProcessResponse(response_buffer, response_len);
+            case S_STARTING:
+                if (m_session.type == TYPE_FW_RC || m_session.type == TYPE_BLDR_RC) {
+                    SendFirmwareStartRequest();
+                } else {
+                    SendFileStartRequest();
+                }
+                response_timeout = 500; // Uvijek čekaj 500ms nakon START paketa
+                break;
+
+            case S_SENDING_DATA:
+                SendDataPacket();
+                // Provjera da li je ovo zadnji paket
+                if ((m_session.bytesSent + m_session.read_chunk_size) >= m_session.fw_size) {
+                    response_timeout = (m_session.type == TYPE_FW_RC || m_session.type == TYPE_BLDR_RC) ? IMG_COPY_DEL : FWR_COPY_DEL;
+                } else {
+                    response_timeout = UPDATE_PACKET_TIMEOUT_MS; // 45ms
+                }
+                break;
+
+            case S_FINISHING:
+                SendFinishRequest();
+                response_timeout = 500; // Dajemo klijentu vremena da potvrdi
+                break;
+
+            case S_SENDING_RESTART_CMD:
+                SendRestartCommand();
+                m_session.state = S_PENDING_APP_START;
+                // Nema čekanja na odgovor, prelazimo na pauzu
+                continue;
+
+            case S_PENDING_APP_START:
+                Serial.printf("[UpdateManager] Pauza od %dms prije slanja APP_EXE...\n", APP_START_DEL);
+                vTaskDelay(pdMS_TO_TICKS(APP_START_DEL));
+                SendAppExeCommand();
+                // Ne čekamo odgovor, završavamo sesiju
+                CleanupSession(false);
+                continue;
+
+            default:
+                // S_IDLE, S_COMPLETED_OK, S_FAILED...
+                // U ovim stanjima, samo izađi iz petlje
+                CleanupSession(m_session.state == S_FAILED);
+                continue;
         }
-        else
+
+        // --- FAZA 2: ČEKANJE ODGOVORA ---
+        if (m_session.state == S_WAITING_FOR_START_ACK ||
+            m_session.state == S_WAITING_FOR_DATA_ACK ||
+            m_session.state == S_WAITING_FOR_FINISH_ACK)
         {
-            // Nema odgovora, provjeri timeout
-            uint32_t response_timeout = UPDATE_PACKET_TIMEOUT_MS; // Default
+            response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, response_timeout);
 
-            // KLJUČNA ISPRAVKA: Postavi ispravan timeout ovisno o stanju i tipu
-            if (m_session.state == S_WAITING_FOR_START_ACK) {
-                // Za START paket, uvijek čekaj duže da klijent obradi zahtjev (npr. brisanje flash-a)
-                response_timeout = IMG_COPY_DEL;
-            } else if (m_session.state == S_WAITING_FOR_DATA_ACK && (m_session.bytesSent + m_session.read_chunk_size) >= m_session.fw_size) {
-                // Za zadnji DATA paket, također čekaj duže da klijent zapiše podatke
-                response_timeout = (m_session.type == TYPE_FW_RC || m_session.type == TYPE_BLDR_RC) ? IMG_COPY_DEL : FWR_COPY_DEL;
-            }
-
-            // Provjeri je li timeout istekao
-            if (millis() - m_session.timeoutStart > response_timeout) {
+            if (response_len > 0) {
+                // Imamo odgovor, obradi ga
+                ProcessResponse(response_buffer, response_len);
+            } else {
+                // Timeout, OnTimeout će se pobrinuti za logiku ponovnog pokušaja
                 OnTimeout();
             }
         }
-        return; // Vrati se i čekaj sljedeći ciklus
-    }
 
-    switch (m_session.state)
-    {
-    case UpdateState::S_STARTING:
-        // ISPRAVKA: Pozovi ispravnu start funkciju na osnovu tipa
-        if (m_session.type == TYPE_FW_RC || m_session.type == TYPE_BLDR_RC) {
-            SendFirmwareStartRequest();
-        } else if (m_session.type == TYPE_IMG_RC || m_session.type == TYPE_LOGO_RT || m_session.type == TYPE_FW_TH || m_session.type == TYPE_BLDR_TH) {
-            SendFileStartRequest();
-        } else {
-            Serial.println(F("[UpdateManager] GREŠKA: Nepoznat tip sesije za S_STARTING."));
-            CleanupSession(true);
-        }
-        break;
-    case UpdateState::S_SENDING_DATA:
-        SendDataPacket();
-        break;
-    case UpdateState::S_FINISHING:
-        SendFinishRequest();
-        break;
-    case UpdateState::S_SENDING_RESTART_CMD:
-        SendRestartCommand(); // Šalje START_BLDR
-        break;
-    case UpdateState::S_PENDING_CLEANUP:
-        CleanupSession(false);
-        break;
-    case UpdateState::S_COMPLETED_OK:
-    case UpdateState::S_FAILED:
-        // U ovim stanjima, ProcessResponse ili OnTimeout su već pozvani i postavili su stanje.
-        // Prelazimo na čišćenje.
-        m_session.state = UpdateState::S_PENDING_CLEANUP;
-        break;
-    default:
-        break;
+        // Mala pauza da se spriječi 100% zauzeće CPU-a unutar ove petlje
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
+    // Kraj blokirajuće petlje
 }
 
 void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
 {
-    // Ako paket ne postoji (preskakanje fajla), odmah izađi
-    if (packet == nullptr) return;
+    // =================================================================================
+    // --- BEZUSLOVNA DIJAGNOSTIKA PRIMLJENOG PAKETA ---
+    // Ispisuje se uvijek, prije bilo kakve logike, da se tačno vidi šta je stiglo.
+    // =================================================================================
+    Serial.println(F("--- UpdateManager: Analiza Primljenog Odgovora ---"));
+    char packet_str[length * 3 + 1];
+    packet_str[0] = '\0';
+    for (int i = 0; i < length; i++) {
+        sprintf(packet_str + strlen(packet_str), "%02X ", packet[i]);
+    }
+    Serial.printf("  -> RAW Paket (%d B): [ %s]\n", length, packet_str);
+    if (length >= 10) { // Minimalna dužina za parsiranje
+        Serial.printf("  -> Status (ACK/NAK): 0x%02X\n", packet[0]);
+        Serial.printf("  -> Ciljna Adresa:   0x%02X%02X\n", packet[1], packet[2]);
+        Serial.printf("  -> Izvorna Adresa:  0x%02X%02X\n", packet[3], packet[4]);
+        Serial.printf("  -> Dužina Podataka: %d\n", packet[5]);
+        Serial.printf("  -> Komanda:         0x%02X\n", packet[6]);
+    }
+    Serial.println(F("----------------------------------------------------"));
 
     uint8_t response_cmd = packet[6];
     uint8_t ack_nack = packet[0];
@@ -491,38 +504,26 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
     }
 }
 
+
+
 void UpdateManager::OnTimeout()
 {
-    // Stara logika za pojedinačne sesije
-    if (m_session.retryCount >= MAX_UPDATE_RETRIES)
-    {
-        Serial.println(F("[UpdateManager] GREŠKA: Previše neuspješnih pokušaja. Update prekinut."));
-        CleanupSession(true);
-        CleanupSession(true); // Ovdje se postavlja S_IDLE
-    }
-    else
-    {
-        m_session.retryCount++; // Uvećaj brojač za sljedeći pokušaj
-        Serial.printf("[UpdateManager] Timeout. Pokušaj %d od %d...\n", m_session.retryCount, MAX_UPDATE_RETRIES);
-        Serial.printf("[UpdateManager] Timeout u stanju [%d]. Pokušaj %d od %d...\n", m_session.state, m_session.retryCount, MAX_UPDATE_RETRIES);
+    m_session.retryCount++;
+    Serial.printf("[UpdateManager] Timeout. Pokušaj %d od %d...\n", m_session.retryCount, MAX_UPDATE_RETRIES);
+    Serial.printf("[UpdateManager] Timeout u stanju [%d]. Pokušaj %d od %d...\n", m_session.state, m_session.retryCount, MAX_UPDATE_RETRIES);
 
-        // Ponovo pošalji isti paket
-        switch(m_session.state) {
-            case S_WAITING_FOR_START_ACK:
-                // ISPRAVKA: Vrati stanje na S_STARTING da bi Run() petlja ponovo pozvala ispravnu funkciju za slanje.
-                // Ovo osigurava da se SendFileStartRequest() ili SendFirmwareStartRequest() ponovo izvrše.
-                m_session.state = S_STARTING;
-                break;
-            case S_WAITING_FOR_DATA_ACK:
-                m_session.state = S_SENDING_DATA; // Vrati stanje da Run() ponovo pošalje
-                break;
-            case S_WAITING_FOR_FINISH_ACK:
-                SendFinishRequest();
-                break;
-            default:
-                CleanupSession(true); // Neočekivano stanje
-                break;
-        }
+    // Vrati stanje na prethodno da bi se ponovo poslao isti paket
+    switch(m_session.state) {
+        case S_WAITING_FOR_START_ACK:
+            m_session.state = S_STARTING;
+            break;
+        case S_WAITING_FOR_DATA_ACK:
+            m_session.state = S_SENDING_DATA;
+            break;
+        case S_WAITING_FOR_FINISH_ACK:
+            m_session.state = S_FINISHING;
+            break;
+        default: break;
     }
 }
 
@@ -667,22 +668,9 @@ void UpdateManager::SendFileStartRequest()
     Serial.printf("  -> RAW Paket (20B): [ %s]\n", packet_str);
     Serial.println(F("---------------------------------------------"));
     // --- KRAJ DIJAGNOSTIKE ---
-
-    // REPLIKACIJA TAJMINGA IZ STAROG KODA
-    uint32_t response_timeout = UPDATE_PACKET_TIMEOUT_MS;
-    if (s->type == TYPE_FW_RC || s->type == TYPE_BLDR_RC)
-    {
-        // Za firmware/bootloader, koristi se duža pauza da se omogući brisanje flash-a
-        response_timeout = IMG_COPY_DEL;
-    }
-    else if (s->type == TYPE_IMG_RC)
-    {
-        // Za slike, koristi se kraća pauza
-        response_timeout = FWR_COPY_DEL;
-    }
-
     // ISPRAVKA: Dužina paketa je 20, a ne 21
     if (m_rs485_service->SendPacket(packet, 20)) {
+        Serial.printf("  -> Paket poslan u %lu ms.\n", millis()); // DIJAGNOSTIKA VREMENA
         s->state = S_WAITING_FOR_START_ACK;
     }
     else
@@ -730,18 +718,6 @@ void UpdateManager::SendDataPacket()
     packet[total_packet_length - 2] = (checksum & 0xFF);
     packet[total_packet_length - 1] = EOT;
     
-    // REPLIKACIJA TAJMINGA IZ STAROG KODA
-    uint32_t response_timeout = UPDATE_PACKET_TIMEOUT_MS;
-    // Provjera da li je ovo zadnji paket
-    if ((s->bytesSent + s->read_chunk_size) >= s->fw_size)
-    {
-        if (s->type == TYPE_FW_RC || s->type == TYPE_BLDR_RC) {
-            response_timeout = IMG_COPY_DEL;
-        } else if (s->type == TYPE_IMG_RC) {
-            response_timeout = FWR_COPY_DEL;
-        }
-    }
-
     if (m_rs485_service->SendPacket(packet, total_packet_length)) {
         s->timeoutStart = millis();
         s->state = S_WAITING_FOR_DATA_ACK;
@@ -813,8 +789,7 @@ void UpdateManager::SendRestartCommand()
     packet[9] = EOT;
     
     if (m_rs485_service->SendPacket(packet, 10)) {
-        s->state = S_PENDING_APP_START;
-        s->timeoutStart = millis(); // Pokreni pauzu
+        s->state = S_PENDING_APP_START; // Ne čekamo ACK, samo prelazimo u stanje pauze
     }
     else
     {

@@ -150,6 +150,15 @@ int Rs485Service::ReceivePacket(uint8_t* buffer, uint16_t buffer_size, uint32_t 
                 // KORAK 3: Tek sada, kada imamo cijeli paket, validiramo ga
                 if (ValidatePacket(buffer, rx_count))
                 {
+                    // --- DIJAGNOSTIKA: ISPIS PRIMLJENOG ODGOVORA ---
+                    char response_packet_str[rx_count * 3 + 1];
+                    response_packet_str[0] = '\0';
+                    for (int i = 0; i < rx_count; i++) {
+                        sprintf(response_packet_str + strlen(response_packet_str), "%02X ", buffer[i]);
+                    }
+                    Serial.printf("[Rs485] -> RAW Odgovor primljen u %lu ms (%d B): [ %s]\n", millis(), rx_count, response_packet_str);
+                    // --- KRAJ DIJAGNOSTIKE ---
+
                     return rx_count; // Uspjeh! Vrati primljeni paket.
                 }
                 else

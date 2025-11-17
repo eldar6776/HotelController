@@ -83,7 +83,7 @@
 
 // --- Update Manager ---
 #define MAX_UPDATE_RETRIES          30 // Originalna vrednost: MAXREP_CNT (30U)
-#define UPDATE_PACKET_TIMEOUT_MS    5000
+#define UPDATE_PACKET_TIMEOUT_MS    45 // Timeout za DATA pakete, prema specifikaciji starog sistema
 #define UPDATE_DATA_CHUNK_SIZE      128
 #define APP_START_DEL               12345 // Originalna vrednost: APP_START_DEL (12345U)
 

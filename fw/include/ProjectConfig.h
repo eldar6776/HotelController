@@ -97,7 +97,7 @@
 #define RX2TX_DEL_MS                3
 
 // --- TimeSync Komande ---
-#define SET_RTC_DATE_TIME           0xEE
+#define SET_RTC_DATE_TIME           0xD5
 #define RTC_PACKET_LENGTH           17
 
 // --- LogPull Komande ---

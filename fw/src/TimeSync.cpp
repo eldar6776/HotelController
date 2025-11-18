@@ -64,6 +64,16 @@ void TimeSync::SendTimeBroadcast()
     time(&rawTime);
     struct tm* updt = localtime(&rawTime);
 
+    // KONAČNA ISPRAVKA: Ne šalji broadcast ako vreme nije sinhronizovano.
+    // Proveravamo da li je godina validna (veća od npr. 2023).
+    // tm_year je broj godina od 1900.
+    if (updt->tm_year < 123) { // 1900 + 123 = 2023
+        LOG_DEBUG(3, "[TimeSync] Vreme još nije sinhronizovano. Preskačem slanje broadcast-a.\n");
+        // Resetujemo tajmer da ne bismo stalno pokušavali u kratkom intervalu
+        m_last_sync_time = millis();
+        return;
+    }
+
     // Pretvaranje tm_wday u RTC format (1=Pon, 7=Ned)
     uint8_t weekday = (updt->tm_wday == 0) ? 7 : updt->tm_wday; 
 
@@ -94,6 +104,15 @@ void TimeSync::SendTimeBroadcast()
     packet[14] = (rs485_pkt_chksum >> 8);
     packet[15] = (rs485_pkt_chksum & 0xFFU);
     packet[16] = EOT;
+
+    // DODATA DIJAGNOSTIKA: Ispis kompletnog paketa
+
+    char packet_str[RTC_PACKET_LENGTH * 3 + 1];
+    packet_str[0] = '\0';
+    for (int i = 0; i < RTC_PACKET_LENGTH; i++) {
+        sprintf(packet_str + strlen(packet_str), "%02X ", packet[i]);
+    }
+    LOG_DEBUG(3, "[TimeSync] -> RAW Paket (%d B): [ %s]\n", RTC_PACKET_LENGTH, packet_str);
 
     // Slanje paketa (Broadcast ne očekuje odgovor, ali Rs485Service čeka timeout)
     m_rs485_service->SendPacket(packet, RTC_PACKET_LENGTH);

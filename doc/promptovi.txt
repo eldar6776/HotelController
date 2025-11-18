@@ -18,3 +18,26 @@
  oštetiti trenutnu implementaciju transfera slika, ne smije se praviti lokalne definicije sve definicije koda moraju biti u 
  projectconfig.h i ne smije se mijenjati crc izračun koji postoji trenutno u update manager u za podpis paketa za transfer slika
  
+ 
+Glavni Cilj: Implementirati HTTP komandu fuf na ESP32 projektu tako da njeno ponašanje bude identično kao na nasleđenom STM32 sistemu.
+
+Ključni Zahtjevi Funkcionalnosti:
+
+Komanda fuf mora pokrenuti transfer fajla img20.raw.
+Izvor fajla mora biti root direktorijum uSD kartice.
+Cilj transfera je RS485 uređaj.
+Obavezni Izvori za Analizu: Potrebna je duboka i sveobuhvatna analiza sledećih fajlova kako bi se razumjela nasleđena logika:
+
+C:\ProjektiOtvoreni\HotelController\fw\reference\FUF_INTEGRATION_PLAN.md: Razumjeti opšti plan.
+rs485.c: Analizirati kako RS485 kontroler prima pakete.
+common.h: OVO JE KLJUČNO! Posebno obratiti pažnju na sve definicije vezane za TAJMINGE (RX2TX_DEL, APP_START_DEL, FWR_COPY_DEL, IMG_COPY_DEL itd.) koji se koriste u različitim sekvencama transfera. Analiza mora potvrditi da li se ovi tajminzi poštuju u postojećem ESP32 kodu i kako ih integrisati u rješenje.
+KRITIČNA OGRANIČENJA (NE SMIJE SE MODIFIKOVATI):
+
+UpdateManager kod: Apsolutno NE SMIJE SE MODIFIKOVATI bilo koja linija koda koja bi mogla oštetiti trenutnu, savršeno funkcionalnu implementaciju transfera slika (iuf komanda).
+CRC Izračun: NE SMIJE SE MIJENJATI postojeći CRC izračun koji se koristi u UpdateManager-u za potpisivanje paketa za transfer slika.
+Lokalne Definicije: NE SMIJE SE PRAVITI nijedna lokalna #define direktiva. Sve nove definicije, ako su neophodne, moraju biti isključivo u fajlu projectconfig.h.
+Proces Implementacije:
+
+Izvršiti duboku analizu STM32 projekta (fokus na httpd_cgi_ssi.c, hotel_ctrl.c, common.h).
+Izvršiti duboku analizu ESP32 projekta (fokus na HttpServer.cpp, UpdateManager.cpp).
+Na osnovu analize, predložiti izmjene postojećeg koda koje ispunjavaju sve gore navedene zahtjeve i ograničenja.

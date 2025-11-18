@@ -29,6 +29,7 @@
 
 // Forward-deklaracije naših Menadžera
 class HttpQueryManager;
+class FirmwareUpdateManager; // NOVO
 class UpdateManager;
 class EepromStorage;
 class SdCardManager; // CHANGED: Zamjenjen SpiFlashStorage
@@ -39,6 +40,7 @@ public:
     HttpServer();
     void Initialize(
         HttpQueryManager* pHttpQueryManager,
+        FirmwareUpdateManager* pFufUpdateManager, // NOVO
         UpdateManager* pUpdateManager,
         EepromStorage* pEepromStorage,
         SdCardManager* pSdCardManager  // CHANGED
@@ -67,6 +69,7 @@ private:
 
     // Pokazivači na module
     HttpQueryManager* m_http_query_manager;
+    FirmwareUpdateManager* m_fuf_update_manager; // NOVO
     UpdateManager* m_update_manager;
     EepromStorage* m_eeprom_storage;
     SdCardManager* m_sd_card_manager; // CHANGED

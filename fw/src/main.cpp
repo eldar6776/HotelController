@@ -20,6 +20,7 @@
 #include "HttpQueryManager.h"
 #include "LogPullManager.h"
 #include "TimeSync.h"
+#include "FirmwareUpdateManager.h" // NOVO
 #include "UpdateManager.h"
 #include <esp_task_wdt.h> // Uključujemo za Watchdog
 
@@ -33,6 +34,7 @@ HttpServer g_httpServer;
 HttpQueryManager g_httpQueryManager;
 LogPullManager g_logPullManager;
 TimeSync g_timeSync;
+FirmwareUpdateManager g_fufUpdateManager; // NOVO
 UpdateManager g_updateManager;
 
 // Globalna varijabla konfiguracije
@@ -85,6 +87,7 @@ void setup()
 
     g_logPullManager.Initialize(&g_rs485Service, &g_eepromStorage);
     g_httpQueryManager.Initialize(&g_rs485Service);
+    g_fufUpdateManager.Initialize(&g_rs485Service, &g_sdCardManager); // NOVO
     g_updateManager.Initialize(&g_rs485Service, &g_sdCardManager);
     g_timeSync.Initialize(&g_rs485Service);
 
@@ -93,6 +96,7 @@ void setup()
     LOG_DEBUG(3, "[setup] Priprema HTTP Servera (ne pokreće se još)...\n");
     g_httpServer.Initialize(
         &g_httpQueryManager,
+        &g_fufUpdateManager, // NOVO
         &g_updateManager,
         &g_eepromStorage,
         &g_sdCardManager
@@ -130,20 +134,23 @@ void loop()
         // Run() će odraditi transfer jednog fajla i vratiti kontrolu.
         g_updateManager.Run();
 
-        // =================================================================================
-        // KONAČNA ISPRAVKA: Logika za pauzu i nastavak sekvence se nalazi OVDJE,
-        // izvan UpdateManager-a, kako bi se osigurao ispravan redoslijed i povratak kontrole.
-        // =================================================================================
-        if (g_updateManager.IsSequenceActive()) {
-            // Nakon što je Run() završio transfer jedne slike, pravimo pauzu.
+        // VRAĆENA ORIGINALNA, ISPRAVNA LOGIKA: Logika pauze za iuf sekvencu MORA OSTATI NETAKNUTA.
+        // Ova pauza se izvršava nakon što Run() završi transfer jedne slike i vrati sesiju u S_IDLE.
+        if (g_updateManager.IsSequenceActive() && g_updateManager.m_session.state == S_IDLE) {
             Serial.printf("[main] Pauza od %dms nakon transfera slike...\n", IMG_COPY_DEL);
             vTaskDelay(pdMS_TO_TICKS(IMG_COPY_DEL));
-
             // Nakon pauze, resetujemo TimeSync tajmer.
             g_timeSync.ResetTimer();
         }
-    } else {
-        // Ako update NIJE aktivan, izvršavaju se redovni pozadinski zadaci.
+    }
+    else if (g_fufUpdateManager.IsActive())
+    {
+        // Ako iuf NIJE aktivan, provjeri da li je fuf/buf update aktivan.
+        // Run() je sada neblokirajući i mora se pozivati u svakoj iteraciji.
+        g_fufUpdateManager.Run();
+    }
+    else {
+        // Ako nijedan update nije aktivan, izvršavaju se redovni pozadinski zadaci.
         g_timeSync.Run();
         g_logPullManager.Run();
     }

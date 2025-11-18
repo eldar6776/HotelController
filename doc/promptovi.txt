@@ -1,0 +1,20 @@
+06 00 05 00 65 01 64 00 64 04
+└┬┘ └─┬─┘ └─┬─┘ │  │  └─┬─┘ │
+ │    │     │   │  │    │   └─ [9] EOT (0x04)
+ │    │     │   │  │    └───── [7-8] Checksum (0x0064 = 100 = komanda 0x64)
+ │    │     │   │  └────────── [6] Komanda (0x64 = DWNLD_DISP_IMG_1)
+ │    │     │   └───────────── [5] Data length (1 bajt)
+ │    │     └───────────────── [3-4] Source address (0x0065 = 101)
+ │    └─────────────────────── [1-2] Dest address (0x0005 = ESP32)
+ └──────────────────────────── [0] ACK (0x06)
+ 
+ analiziraj kompletan projekat i pregledaj C:\ProjektiOtvoreni\HotelController\fw\reference\FUF_INTEGRATION_PLAN.md 
+ tvoj zadatak je da implementiraš identičnu komandu za slanje firmware fajla img20.raw iz root direktorija uSD kartice 
+ na rs485 uređaj, u folderu reference imaš rs485.c fajl koji jeste sklop funkcija koje na strani rs485 kontrolera primaju 
+ ove pakete koje mi štaljemo sa ovog esp32 uređaja a u fajlu common.h imaš sve definicije projekta posebno za tajminge u 
+ raznim sekvencama transfera tvoja uloga je jasna kao developera zahtjeva se duboka sveobuhvatna analiza prethodnog stm32 
+ projekta i zatim esp32 projekta a zatim prijedlog izmjena postojećeg koda bez da se naruči i jedna od trenutnih funkcija 
+ koda updatemanagera koja radi savršeno za transfer slika dakle ne smije se modifikovati bilo koja linija koda koja bi mogla 
+ oštetiti trenutnu implementaciju transfera slika, ne smije se praviti lokalne definicije sve definicije koda moraju biti u 
+ projectconfig.h i ne smije se mijenjati crc izračun koji postoji trenutno u update manager u za podpis paketa za transfer slika
+ 

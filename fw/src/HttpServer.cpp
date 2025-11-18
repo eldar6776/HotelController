@@ -15,6 +15,7 @@
 #include "DebugConfig.h"
 #include "NetworkManager.h"
 #include "HttpServer.h"
+#include "FirmwareUpdateManager.h" // NOVO
 #include "HttpQueryManager.h"
 #include "UpdateManager.h"
 #include "EepromStorage.h"
@@ -29,6 +30,7 @@
 // Globalni objekti (extern)
 extern AppConfig g_appConfig;
 extern NetworkManager g_networkManager; // Potrebno za Eth/RS485 restart
+extern FirmwareUpdateManager g_fufUpdateManager; // NOVO
 
 HttpServer::HttpServer() : m_server(80)
 {
@@ -37,6 +39,7 @@ HttpServer::HttpServer() : m_server(80)
 
 void HttpServer::Initialize(
     HttpQueryManager *pHttpQueryManager,
+    FirmwareUpdateManager *pFufUpdateManager, // NOVO
     UpdateManager *pUpdateManager,
     EepromStorage *pEepromStorage,
     SdCardManager *pSdCardManager)
@@ -44,6 +47,7 @@ void HttpServer::Initialize(
     Serial.println(F("[HttpServer] Inicijalizacija..."));
     m_http_query_manager = pHttpQueryManager;
     m_update_manager = pUpdateManager;
+    m_fuf_update_manager = pFufUpdateManager; // NOVO
     m_eeprom_storage = pEepromStorage;
     m_sd_card_manager = pSdCardManager;
 
@@ -294,7 +298,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     Serial.println(F("[HttpServer] Primljen /sysctrl.cgi zahtjev..."));
 
     // Provjera da li je update već u toku
-    if (m_update_manager->m_session.state != S_IDLE)
+    if (m_update_manager->IsActive() || m_fuf_update_manager->IsActive()) // NOVO: Provera oba menadžera
     {
         SendSSIResponse(request, HTTP_RESPONSE_BUSY);
         return;
@@ -515,28 +519,36 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     // --- RC update firmware: fuf, ful ---
     if (request->hasParam("fuf") && request->hasParam("ful"))
     {
-        if (StartUpdateSession(request, CMD_DWNLD_FWR_IMG, request->getParam("fuf")->value(), request->getParam("ful")->value()))
-        {
-            SendSSIResponse(request, HTTP_RESPONSE_OK);
-        }
-        else
-        {
+        if (!m_sd_card_manager->IsCardMounted()) {
             SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            return;
         }
+        uint16_t first_addr = request->getParam("fuf")->value().toInt();
+        uint16_t last_addr = request->getParam("ful")->value().toInt();
+        if (first_addr == 0 || last_addr < first_addr) {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            return;
+        }
+        m_fuf_update_manager->StartFirmwareUpdateSequence(first_addr, last_addr, FUF_TYPE_FIRMWARE);
+        SendSSIResponse(request, "OK (FUF sequence started)");
         return;
     }
 
     // --- RC update bootloader: buf, bul ---
     if (request->hasParam("buf") && request->hasParam("bul"))
     {
-        if (StartUpdateSession(request, CMD_DWNLD_BLDR_IMG, request->getParam("buf")->value(), request->getParam("bul")->value()))
-        {
-            SendSSIResponse(request, HTTP_RESPONSE_OK);
-        }
-        else
-        {
+        if (!m_sd_card_manager->IsCardMounted()) {
             SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            return;
         }
+        uint16_t first_addr = request->getParam("buf")->value().toInt();
+        uint16_t last_addr = request->getParam("bul")->value().toInt();
+        if (first_addr == 0 || last_addr < first_addr) {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            return;
+        }
+        m_fuf_update_manager->StartFirmwareUpdateSequence(first_addr, last_addr, FUF_TYPE_BOOTLOADER);
+        SendSSIResponse(request, "OK (BUF sequence started)");
         return;
     }
 

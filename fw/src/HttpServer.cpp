@@ -170,11 +170,23 @@ void HttpServer::HandleRoot(AsyncWebServerRequest *request)
  */
 void HttpServer::SendSSIResponse(AsyncWebServerRequest *request, const String &message)
 {
-    // Koristimo pomoćnu funkciju iz log_html.h koja ispravno formatira
-    // odgovor u format "$MESSAGE$" koji je kompatibilan sa starim sistemom.
-    String html = String(FPSTR(LOG_HTML));
-    html.replace("$<!--#t-->$", "$" + message + "$");
-    request->send(200, "text/html", html);
+    // REPLIKACIJA STAROG SISTEMA:
+    // Stari sistem je vraćao sadržaj fajla 'log.html' koji je sadržavao samo SSI tag uokviren '$' znakovima.
+    // Eksterna aplikacija očekuje tačno takav format (npr. "$OK$" ili "$AABBCC...$") bez dodatnih HTML tagova
+    // (header, body, div, itd.) koji se nalaze u LOG_HTML template-u.
+    // Zato direktno šaljemo raw string uokviren dolarima.
+    
+    // KRITIČNO: Replikuj TAČNU strukturu original log.html fajla
+    String response = "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\r\n";
+    response += "<html>\r\n";
+    response += "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=windows-1252\">\r\n";
+    response += "<meta content=\"MSHTML 6.00.2800.1561\" name=\"GENERATOR\">\r\n";
+    response += "<body>\r\n";
+    response += "$" + message + "$\r\n";
+    response += "</body>\r\n";
+    response += "</html>\r\n";
+    
+    request->send(200, "text/html; charset=windows-1252", response);
 }
 
 /**
@@ -295,7 +307,23 @@ bool HttpServer::StartUpdateSession(AsyncWebServerRequest *request, uint8_t upda
 // ============================================================================
 void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
 {
-    Serial.println(F("[HttpServer] Primljen /sysctrl.cgi zahtjev..."));
+    // Detaljan log primljenog zahtjeva
+    Serial.println(F("[HttpServer] ========================================"));
+    Serial.println(F("[HttpServer] Primljen /sysctrl.cgi zahtjev:"));
+    Serial.printf("[HttpServer]   URL: %s\n", request->url().c_str());
+    Serial.printf("[HttpServer]   Method: %s\n", request->methodToString());
+    Serial.printf("[HttpServer]   Host: %s\n", request->host().c_str());
+    Serial.printf("[HttpServer]   Broj parametara: %d\n", request->params());
+    
+    // Ispis svih parametara
+    if (request->params() > 0) {
+        Serial.println(F("[HttpServer]   Parametri:"));
+        for (int i = 0; i < request->params(); i++) {
+            AsyncWebParameter* p = request->getParam(i);
+            Serial.printf("[HttpServer]     %s = %s\n", p->name().c_str(), p->value().c_str());
+        }
+    }
+    Serial.println(F("[HttpServer] ========================================"));
 
     // Provjera da li je update već u toku
     if (m_update_manager->IsActive() || m_fuf_update_manager->IsActive()) // NOVO: Provera oba menadžera
@@ -389,7 +417,7 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         }
         else if (log_op == "4" || log_op.equalsIgnoreCase("DLlog"))
         {
-            if (m_eeprom_storage->DeleteOldestLog() == LoggerStatus::LOGGER_OK)
+            if (m_eeprom_storage->DeleteLogBlock() == LoggerStatus::LOGGER_OK)
             {
                 SendSSIResponse(request, HTTP_RESPONSE_DELETED);
             }

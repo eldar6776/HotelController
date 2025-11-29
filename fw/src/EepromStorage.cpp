@@ -298,40 +298,32 @@ void EepromStorage::LoggerInit()
 
 LoggerStatus EepromStorage::WriteLog(const LogEntry* entry)
 {
-    LOG_DEBUG(5, "[Eeprom] Entering WriteLog()...\n");
-    if (m_log_count >= MAX_LOG_ENTRIES)
-    {
-        // Puni smo, brisemo najstariji prije upisa
-        DeleteOldestLog();
-    }
+    // Adresa na koju upisujemo novi log (head)
+    uint16_t write_addr = EEPROM_LOG_START_ADDR + (m_log_write_index * LOG_ENTRY_SIZE);
 
-    // Dodatni bajt za status (0x55/0xFF), stoga koristimo LOG_RECORD_SIZE
-    uint8_t write_buffer[LOG_RECORD_SIZE]; 
-    
-    uint16_t write_addr = EEPROM_LOG_START_ADDR + (m_log_write_index * LOG_RECORD_SIZE);
-
-    // 1. Status Byte
-    write_buffer[0] = STATUS_BYTE_VALID; 
-    
-    // 2. Kopiraj LogEntry (sigurno koristimo stvarnu veličinu strukture i popunimo ostatak nulama)
-    size_t entry_copy_size = min((size_t)LOG_ENTRY_SIZE, sizeof(LogEntry));
-    memcpy(&write_buffer[1], (const uint8_t*)entry, entry_copy_size);
-    if (LOG_ENTRY_SIZE > entry_copy_size)
-    {
-        memset(&write_buffer[1 + entry_copy_size], 0, LOG_ENTRY_SIZE - entry_copy_size);
-    }
-
-    if (!WriteBytes(write_addr, write_buffer, LOG_RECORD_SIZE))
+    // Upisujemo 16 bajtova LogEntry strukture
+    if (!WriteBytes(write_addr, (const uint8_t*)entry, LOG_ENTRY_SIZE))
     {
         LOG_DEBUG(1, "[Eeprom] GRESKA: Pisanje loga na adresu 0x%04X nije uspjelo.\n", write_addr);
         return LoggerStatus::LOGGER_ERROR;
     }
 
-    // Azuriraj indekse
+    // Pomjeramo head (indeks za pisanje) na sljedeću poziciju
     m_log_write_index = (m_log_write_index + 1) % MAX_LOG_ENTRIES;
-    m_log_count++;
 
-    LOG_DEBUG(3, "[Eeprom] Log uspješno zapisan. Ukupno logova: %u\n", m_log_count);
+    // Ako je bafer pun, tail (indeks čitanja) također mora pratiti head.
+    if (m_log_count >= MAX_LOG_ENTRIES)
+    {
+        m_log_read_index = (m_log_read_index + 1) % MAX_LOG_ENTRIES;
+        LOG_DEBUG(4, "[Eeprom] Bafer je pun, prepisan je najstariji log.\n");
+    }
+    else
+    {
+        // Ako bafer nije pun, samo povećavamo brojač
+        m_log_count++;
+    }
+
+    LOG_DEBUG(3, "[Eeprom] Log uspješno zapisan. Ukupno logova: %u. Head: %u, Tail: %u\n", m_log_count, m_log_write_index, m_log_read_index);
     return LoggerStatus::LOGGER_OK;
 }
 
@@ -362,7 +354,9 @@ LoggerStatus EepromStorage::GetOldestLog(LogEntry* entry)
     }
 
     // Kopiraj log (podaci pocinju od read_buffer[1])
-    size_t entry_copy_size = min((size_t)LOG_ENTRY_SIZE, sizeof(LogEntry));
+    // ISPRAVKA: Ograničavamo kopiranje na veličinu LogEntry strukture, ali ne više od
+    // dostupnih podataka u baferu (LOG_RECORD_SIZE - 1).
+    size_t entry_copy_size = min(sizeof(LogEntry), (size_t)(LOG_RECORD_SIZE - 1));
     memcpy((uint8_t*)entry, &read_buffer[1], entry_copy_size);
     if (sizeof(LogEntry) > entry_copy_size)
     {
@@ -379,41 +373,50 @@ LoggerStatus EepromStorage::GetOldestLog(LogEntry* entry)
 // ============================================================================
 String EepromStorage::ReadLogBlockAsHexString()
 {
-    LOG_DEBUG(4, "[Eeprom] Čitanje bloka logova kao HEX string (V1 kompatibilnost)...\n");
+    LOG_DEBUG(3, "[Eeprom] Čitanje bloka logova kao HEX string (V2 - Kompatibilno)...\n");
+    LOG_DEBUG(3, "[Eeprom] -> Trenutni log count: %u, read_index: %u\n", m_log_count, m_log_read_index);
+
     if (m_log_count == 0)
     {
+        LOG_DEBUG(3, "[Eeprom] Nema logova, vraćam 'EMPTY'.\n");
         return HTTP_RESPONSE_EMPTY;
     }
 
-    // Logika preuzeta iz starog `HC_ReadLogListBlock`
-    // Čitamo fiksni blok od 128 bajtova (I2CEE_BLOCK) počevši od najstarijeg loga.
-    uint16_t read_addr = EEPROM_LOG_START_ADDR + (m_log_read_index * LOG_RECORD_SIZE);
-    uint16_t bytes_to_read = 128; // Fiksna veličina bloka kao u starom sistemu
+    // 1. Definiši maksimalnu veličinu bloka i bafer (kao stari I2CEE_BLOCK)
+    const uint16_t max_bytes_to_read = 256;
+    uint8_t data_buffer[max_bytes_to_read];
 
-    // Osiguraj da ne čitamo preko kraja log memorije
-    uint32_t end_of_log_area = EEPROM_LOG_START_ADDR + EEPROM_LOG_AREA_SIZE;
-    if (read_addr + bytes_to_read > end_of_log_area) {
-        bytes_to_read = end_of_log_area - read_addr;
-    }
+    // 2. Izračunaj koliko logova treba pročitati
+    uint16_t logs_in_block = max_bytes_to_read / LOG_RECORD_SIZE; // 256 / 16 = 16
+    uint16_t logs_to_read = min((uint16_t)m_log_count, logs_in_block);
+    uint16_t total_bytes_to_read = logs_to_read * LOG_RECORD_SIZE;
 
-    if (bytes_to_read == 0) {
-        return HTTP_RESPONSE_EMPTY;
-    }
+    LOG_DEBUG(3, "[Eeprom] -> Čitam %u logova (%u bajtova).\n", logs_to_read, total_bytes_to_read);
 
-    uint8_t read_buffer[bytes_to_read];
-    if (!ReadBytes(read_addr, read_buffer, bytes_to_read))
+    // 3. Pročitaj logove jedan po jedan da bi se ispravno rukovalo kružnim baferom
+    for (uint16_t i = 0; i < logs_to_read; ++i)
     {
-        LOG_DEBUG(1, "[Eeprom] GRESKA: Čitanje bloka logova nije uspjelo.\n");
-        return HTTP_RESPONSE_ERROR;
+        // Izračunaj indeks i adresu trenutnog loga u kružnom baferu
+        uint16_t current_log_index = (m_log_read_index + i) % MAX_LOG_ENTRIES;
+        uint16_t read_addr = EEPROM_LOG_START_ADDR + (current_log_index * LOG_RECORD_SIZE);
+        
+        // Adresa u odredišnom baferu
+        uint8_t* dest_buffer = data_buffer + (i * LOG_RECORD_SIZE);
+
+        if (!ReadBytes(read_addr, dest_buffer, LOG_RECORD_SIZE))
+        {
+            LOG_DEBUG(1, "[Eeprom] GRESKA: Čitanje loga na indeksu %u nije uspjelo.\n", current_log_index);
+            return HTTP_RESPONSE_ERROR;
+        }
     }
 
-    // Replikacija `Hex2Str` funkcije
+    // 4. Replikacija `Hex2Str` funkcije
     String hex_string = "";
-    hex_string.reserve(bytes_to_read * 2); // Pre-alokacija za performanse
-    for (uint16_t i = 0; i < bytes_to_read; i++)
+    hex_string.reserve(total_bytes_to_read * 2); // Pre-alokacija za performanse
+    for (uint16_t i = 0; i < total_bytes_to_read; i++)
     {
         char hex_buf[3];
-        sprintf(hex_buf, "%02X", read_buffer[i]);
+        sprintf(hex_buf, "%02X", data_buffer[i]);
         hex_string += hex_buf;
     }
 
@@ -421,30 +424,41 @@ String EepromStorage::ReadLogBlockAsHexString()
     return hex_string;
 }
 
-LoggerStatus EepromStorage::DeleteOldestLog()
+LoggerStatus EepromStorage::DeleteLogBlock()
 {
-    LOG_DEBUG(5, "[Eeprom] Entering DeleteOldestLog()...\n");
     if (m_log_count == 0)
     {
+        LOG_DEBUG(3, "[Eeprom] Nema logova za brisanje.\n");
         return LoggerStatus::LOGGER_EMPTY;
     }
 
-    uint16_t status_addr = EEPROM_LOG_START_ADDR + (m_log_read_index * LOG_RECORD_SIZE);
+    // ISPRAVKA: Uklonjena konstanta. Dinamičko izračunavanje broja logova za brisanje,
+    // identično logici za čitanje (ReadLogBlockAsHexString).
+    const uint16_t max_bytes_to_process = 256; // Ekvivalent starom I2CEE_BLOCK
+    uint16_t logs_in_block = max_bytes_to_process / LOG_RECORD_SIZE; // 256 / 16 = 16 logova
+    uint16_t logs_to_delete = min((uint16_t)m_log_count, logs_in_block);
+
+    LOG_DEBUG(3, "[Eeprom] Brisanje bloka od %u logova...\n", logs_to_delete);
     
-    // Brisemo samo statusni bajt
-    uint8_t empty_byte = STATUS_BYTE_EMPTY; 
-    
-    if (!WriteBytes(status_addr, &empty_byte, 1))
+    uint8_t zero_buffer[LOG_ENTRY_SIZE];
+    memset(zero_buffer, 0, LOG_ENTRY_SIZE);
+
+    for (uint16_t i = 0; i < logs_to_delete; i++)
     {
-        LOG_DEBUG(1, "[Eeprom] GRESKA: Brisanje (pisanje 0xFF) status bajta na adresi 0x%04X nije uspjelo.\n", status_addr);
-        return LoggerStatus::LOGGER_ERROR;
+        uint16_t current_log_index = (m_log_read_index + i) % MAX_LOG_ENTRIES;
+        uint16_t delete_addr = EEPROM_LOG_START_ADDR + (current_log_index * LOG_ENTRY_SIZE);
+        if (!WriteBytes(delete_addr, zero_buffer, LOG_ENTRY_SIZE))
+        {
+            LOG_DEBUG(1, "[Eeprom] GRESKA: Brisanje loga na indeksu %u nije uspjelo.\n", current_log_index);
+            return LoggerStatus::LOGGER_ERROR;
+        }
     }
 
-    m_log_read_index = (m_log_read_index + 1) % MAX_LOG_ENTRIES;
-    m_log_count--;
+    m_log_read_index = (m_log_read_index + logs_to_delete) % MAX_LOG_ENTRIES;
+    m_log_count -= logs_to_delete;
 
+    LOG_DEBUG(3, "[Eeprom] Blok od %u logova obrisan. Preostalo logova: %u\n", logs_to_delete, m_log_count);
     return LoggerStatus::LOGGER_OK;
-    LOG_DEBUG(3, "[Eeprom] Najstariji log obrisan. Preostalo logova: %u\n", m_log_count);
 }
 
 // Implementacija WriteAddressList
@@ -514,21 +528,19 @@ bool EepromStorage::ReadAddressList(uint16_t* listBuffer, uint16_t maxCount, uin
 // ============================================================================
 LoggerStatus EepromStorage::ClearAllLogs()
 {
-    LOG_DEBUG(3, "[Eeprom] Brisanje svih logova...\n");
+    LOG_DEBUG(3, "[Eeprom] Brisanje svih logova (punjenje nulama)...\n");
 
-    // Pripremi buffer sa 0xFF (STATUS_BYTE_EMPTY)
+    // Pripremi buffer sa 0x00 (prazan log slot)
     uint8_t empty_buffer[EEPROM_PAGE_SIZE];
-    memset(empty_buffer, STATUS_BYTE_EMPTY, EEPROM_PAGE_SIZE);
+    memset(empty_buffer, 0, EEPROM_PAGE_SIZE);
 
     uint32_t bytes_to_clear = EEPROM_LOG_AREA_SIZE;
     uint16_t current_address = EEPROM_LOG_START_ADDR;
 
     while (bytes_to_clear > 0)
     {
-        // Odredi koliko pisati u ovom ciklusu (do kraja stranice)
-        uint16_t page_offset = current_address % EEPROM_PAGE_SIZE;
-        uint16_t bytes_to_end_of_page = EEPROM_PAGE_SIZE - page_offset;
-        uint16_t chunk_size = min((uint16_t)bytes_to_clear, bytes_to_end_of_page);
+        // Odredi koliko pisati u ovom ciklusu
+        uint16_t chunk_size = min((uint32_t)bytes_to_clear, (uint32_t)sizeof(empty_buffer));
         
         if (!WriteBytes(current_address, empty_buffer, chunk_size))
         {

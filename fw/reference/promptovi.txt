@@ -1,0 +1,43 @@
+06 00 05 00 65 01 64 00 64 04
+└┬┘ └─┬─┘ └─┬─┘ │  │  └─┬─┘ │
+ │    │     │   │  │    │   └─ [9] EOT (0x04)
+ │    │     │   │  │    └───── [7-8] Checksum (0x0064 = 100 = komanda 0x64)
+ │    │     │   │  └────────── [6] Komanda (0x64 = DWNLD_DISP_IMG_1)
+ │    │     │   └───────────── [5] Data length (1 bajt)
+ │    │     └───────────────── [3-4] Source address (0x0065 = 101)
+ │    └─────────────────────── [1-2] Dest address (0x0005 = ESP32)
+ └──────────────────────────── [0] ACK (0x06)
+ 
+ analiziraj kompletan projekat i pregledaj C:\ProjektiOtvoreni\HotelController\fw\reference\FUF_INTEGRATION_PLAN.md 
+ tvoj zadatak je da implementiraš identičnu komandu za slanje firmware fajla img20.raw iz root direktorija uSD kartice 
+ na rs485 uređaj, u folderu reference imaš rs485.c fajl koji jeste sklop funkcija koje na strani rs485 kontrolera primaju 
+ ove pakete koje mi štaljemo sa ovog esp32 uređaja a u fajlu common.h imaš sve definicije projekta posebno za tajminge u 
+ raznim sekvencama transfera tvoja uloga je jasna kao developera zahtjeva se duboka sveobuhvatna analiza prethodnog stm32 
+ projekta i zatim esp32 projekta a zatim prijedlog izmjena postojećeg koda bez da se naruči i jedna od trenutnih funkcija 
+ koda updatemanagera koja radi savršeno za transfer slika dakle ne smije se modifikovati bilo koja linija koda koja bi mogla 
+ oštetiti trenutnu implementaciju transfera slika, ne smije se praviti lokalne definicije sve definicije koda moraju biti u 
+ projectconfig.h i ne smije se mijenjati crc izračun koji postoji trenutno u update manager u za podpis paketa za transfer slika
+ 
+ 
+Glavni Cilj: Implementirati HTTP komandu fuf na ESP32 projektu tako da njeno ponašanje bude identično kao na nasleđenom STM32 sistemu.
+
+Ključni Zahtjevi Funkcionalnosti:
+
+Komanda fuf mora pokrenuti transfer fajla img20.raw.
+Izvor fajla mora biti root direktorijum uSD kartice.
+Cilj transfera je RS485 uređaj.
+Obavezni Izvori za Analizu: Potrebna je duboka i sveobuhvatna analiza sledećih fajlova kako bi se razumjela nasleđena logika:
+
+C:\ProjektiOtvoreni\HotelController\fw\reference\FUF_INTEGRATION_PLAN.md: Razumjeti opšti plan.
+rs485.c: Analizirati kako RS485 kontroler prima pakete.
+common.h: OVO JE KLJUČNO! Posebno obratiti pažnju na sve definicije vezane za TAJMINGE (RX2TX_DEL, APP_START_DEL, FWR_COPY_DEL, IMG_COPY_DEL itd.) koji se koriste u različitim sekvencama transfera. Analiza mora potvrditi da li se ovi tajminzi poštuju u postojećem ESP32 kodu i kako ih integrisati u rješenje.
+KRITIČNA OGRANIČENJA (NE SMIJE SE MODIFIKOVATI):
+
+UpdateManager kod: Apsolutno NE SMIJE SE MODIFIKOVATI bilo koja linija koda koja bi mogla oštetiti trenutnu, savršeno funkcionalnu implementaciju transfera slika (iuf komanda).
+CRC Izračun: NE SMIJE SE MIJENJATI postojeći CRC izračun koji se koristi u UpdateManager-u za potpisivanje paketa za transfer slika.
+Lokalne Definicije: NE SMIJE SE PRAVITI nijedna lokalna #define direktiva. Sve nove definicije, ako su neophodne, moraju biti isključivo u fajlu projectconfig.h.
+Proces Implementacije:
+
+Izvršiti duboku analizu STM32 projekta (fokus na httpd_cgi_ssi.c, hotel_ctrl.c, common.h).
+Izvršiti duboku analizu ESP32 projekta (fokus na HttpServer.cpp, UpdateManager.cpp).
+Na osnovu analize, predložiti izmjene postojećeg koda koje ispunjavaju sve gore navedene zahtjeve i ograničenja.

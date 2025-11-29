@@ -1,0 +1,219 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html><head><title>sysctrl_html</title>
+
+<meta http-equiv="Content-Type" content="text/html; charset=windows-1252">
+<meta content="MSHTML 6.00.2800.1561" name="GENERATOR">
+</head>
+<body>
+<br>
+<input value="Ugasi" type="button" onclick="settime1()">  
+<hr>
+<input value="Upali" type="button" onclick="settime2()"> <input value="Upali bez parametra" type="button" onclick="nev()">
+<hr>
+<input value="Set date/time" type="button" onclick="settime()">
+<hr>
+<input value="Log get" type="button" onclick="settime3()"> <input value="Log del" type="button" onclick="settime4()"><br><span id="log0"></span>
+<hr>
+    Controller address:<input id="kont" value="100" type="number" min="1" max="65000"> <input value="Get status" type="button" onclick="zahtjev(1)">
+<hr>
+    Controller address:<input id="kont12" value="100" type="number" min="1" max="65000"> New status:
+<select id="kontt12"  >
+<option value="0">Idle</option>
+<option value="1">Spremna</option>
+<option value="2">Zauzeta</option>
+<option value="3">Ciscenje</option>
+<option value="4">Generalno C.</option>
+<option value="5">Neupotrebljiva</option>
+<option value="6">Late CheckOut</option>
+<option value="7">Sobraica u sobi</option> 
+<option value="8">Force DND</option> 
+<option value="9">Fire exit</option> 
+<option value="10">Fire alarm</option> 
+</select>
+<input value="Set status" type="button" onclick="zahtjev(12)" title="Update"> 
+<hr>
+    Controller address:<input id="kont1" value="100" type="number" min="1" max="65000">
+0<input id="do0"  onchange="zahtjevt(2)" type="checkbox" value="0">
+1<input id="do1" onchange="zahtjevt(2)" type="checkbox" value="0">
+2<input id="do2" onchange="zahtjevt(2)" type="checkbox" value="0">
+3<input id="do3" onchange="zahtjevt(2)" type="checkbox" value="0">
+4<input id="do4" onchange="zahtjevt(2)" type="checkbox" value="0">
+5<input id="do5" onchange="zahtjevt(2)" type="checkbox" value="0">
+6<input id="do6" onchange="zahtjevt(2)" type="checkbox" value="0">
+7<input id="do7" onchange="zahtjevt(2)" type="checkbox" value="0">  Force digital output
+<hr>
+    Controller address:<input id="kont2"   value="100" type="number" min="1" max="65000"> Brightness: <input onchange="zahtjevt(3)" id="br2" value="500" type="number" min="100" max="900"> Set display brightness
+<hr>
+    Controller address:<input id="kont3" value="100" type="number" min="1" max="65000">  
+<input value="Update firmware to selected controller" type="button" onclick="zahtjev(4)">  <input value="Update firmware to all controllers" type="button" onclick="zahtjev(404)" title="Update"> 
+<hr>
+    Controller address:<input id="kont6" value="100" type="number" min="1" max="65000">  
+<input value="Reset SOS" type="button" onclick="zahtjev(6)" > 
+<hr>
+    Controller address:<input id="kont4" value="100" type="number" min="1" max="65000"> Card #: <input id="kont4l" value="1" type="number" min="1" max="8">
+Card ID: <input id="kont4k" value="" type="text"> Expiry date / time: <input placeholder="ddMMYYHHmm" title="ddMMYYHHmm" type="text" id="kont4d" value="">
+<input value="Set" type="button" onclick="zahtjev(5)" title="Update"> 
+<hr>
+    Controller address:<input id="kont7" value="100" type="number" min="1" max="65000"> New controller address: <input id="kont71" value="100" type="number" min="1" max="65000">
+<input value="Set" type="button" onclick="zahtjev(7)" title="Update"> 
+<hr>
+    Controller address:<input id="kont9" value="100" type="number" min="1" max="65000"> Picture #: <input id="kont91" value="0" type="number" min="1" max="19">
+<input value="Upload selected picture" type="button" onclick="zahtjev(9)">
+<input value="Upload all pictures to selected controller" type="button" onclick="zahtjev(919)"> 
+<input value="Upload all pictures to all controllers" type="button" onclick="zahtjev(929)"> 
+<hr>
+    Controller address:<input id="kont8" value="100" type="number" min="1" max="65000"> <input value="Reset" type="button" onclick="zahtjev(8)" title="Update"> 
+<hr>
+    Controller address:<input id="kont11" value="100" type="number" min="1" max="65000"> Heating/Cooling <input id="kont1lc"  type="checkbox" value="0"> Set point: <input id="kont1la" value="0" type="number" min="0" max="63"> Difference: <input id="kont1lb" value="0" type="number" min="0" max="127"> OFF: <input checked type="radio"  name="kont1ld"  id="kont1lef" value="male"> ON: <input type="radio" name="kont1ld"  id="kont1ld" value="male"> One cycle: <input type="radio"  name="kont1ld"  id="kont1le" value="male">  <input value="Set" type="button" onclick="zahtjev(11)" title="Update"> 
+
+<h3><font size="-1"><span style="color: black;"></span>
+</font></h3><h3 style="font-weight: normal; font-family: Verdana;"><font size="-1"><br>
+</font></h3>
+<span style="font-family: Verdana;"></span><font size="-1"><a style="font-family: Verdana;" href="/sysctrl.html"><big><span style="font-weight: bold;"></span></big></a></font>
+<font size="-1"><span style="color: black;">_______________________________________________________________________________________________________________<br>
+</span></font><font class="footmsg">&nbsp;
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
+&nbsp; &nbsp; &nbsp; &nbsp;<comment title="#config timefmt=&quot;%Y&quot; " xmlns="http://disruptive-innovations.com/zoo/nvu"><!--#config timefmt="%Y" --></comment><comment title="#echo var=&quot;DATE_GMT&quot; " xmlns="http://disruptive-innovations.com/zoo/nvu"><!--#echo var="DATE_GMT" --></comment>
+<span style="color: silver;">&nbsp; &nbsp;
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp;All rights
+reserved © 2011 I-media GROUP d.o.o. Sarajevo</span>&nbsp;</font>
+</body></html>
+<SCRIPT>
+function nev(){
+ var xhttp  = new XMLHttpRequest();
+ xhttp.open("GET","sysctrl.cgi?led=1", true);
+  xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+  xhttp.send();
+
+}
+
+function settime1(){
+    location.href = "sysctrl.cgi?";
+}
+function settime2(){
+    location.href = "sysctrl.cgi?led=1";
+}
+function settime3(){
+  document.getElementById("log0").innerHTML ='Zahtjev poslan';
+  var xhttp  = new XMLHttpRequest();
+xhttp.onreadystatechange = function() {
+    if (xhttp.readyState == 4 && xhttp.status == 200) {  // alert(xhttp.responseText);
+    document.getElementById("log0").innerHTML =xhttp.responseText ;
+    }else{document.getElementById("log0").innerHTML ='Greska<br>readyState:'+xhttp.readyState+'<br>status:'+xhttp.status+'<br>responseText'+xhttp.responseText+'<br>responseXML:'+xhttp.responseXML; }};
+    xhttp.open("GET","sysctrl.cgi?log=3", true);
+  xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+  xhttp.send();
+}
+function settime4(){   document.getElementById("log0").innerHTML ="Zahtjev za brisanje"
+  document.getElementById("log0").innerHTML ='Zahtjev poslan';
+  var xhttp  = new XMLHttpRequest();
+xhttp.onreadystatechange = function() {
+    if (xhttp.readyState == 4 && xhttp.status == 200) {
+    document.getElementById("log0").innerHTML =xhttp.responseText ;
+    }else{document.getElementById("log0").innerHTML ='Greska<br>readyState:'+xhttp.readyState+'<br>status:'+xhttp.status+'<br>responseText'+xhttp.responseText+'<br>responseXML:'+xhttp.responseXML; }}; xhttp.open("GET","sysctrl.cgi?log=4", true);
+  xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+  xhttp.send();
+}
+function settime(){
+var currentTime = new Date();
+var month = addZero(currentTime.getMonth() + 1);
+var day = addZero(currentTime.getDate());
+var year = addZero(currentTime.getFullYear());
+var hours = addZero(currentTime.getHours());
+var minutes = addZero(currentTime.getMinutes());
+var sec = addZero(currentTime.getSeconds());
+location.href = "sysctrl.cgi?v="+day+month+year+hours+minutes+sec+"&n=0";
+}
+function addZero(i) {
+    if (i < 10) {
+        i = "0" + i;
+    }
+    return i;
+}
+function zahtjev(t){
+    if(t=="1"){ location.href = "sysctrl.cgi?cst="+document.getElementById("kont").value+"&n=0";
+    }else if(t=="2"){
+        var n0=0;var n1=0;var n2=0;var n3=0;var n4=0;var n5=0;var n6=0;var n7=0;
+	    if(document.getElementById("do0").checked){n0=1;};
+	    if(document.getElementById("do1").checked){n1=1;};
+	    if(document.getElementById("do2").checked){n2=1;};
+	    if(document.getElementById("do3").checked){n3=1;};
+	    if(document.getElementById("do4").checked){n4=1;};
+	    if(document.getElementById("do5").checked){n5=1;};
+	    if(document.getElementById("do6").checked){n6=1;};
+	    if(document.getElementById("do7").checked){n7=1;};
+	    location.href = "sysctrl.cgi?cdo="+document.getElementById("kont1").value+"&do0="+n0+"&do1="+n1+"&do2="+n2+"&do3="+n3+"&do4="+n4+"&do5="+n5+"&do6="+n6+"&do7="+n7+"&n=0";
+    }else if(t=="3"){
+    	location.href = "sysctrl.cgi?cbr="+document.getElementById("kont2").value+"&br="+document.getElementById("br2").value+"&n=0";
+    }else if(t=="4"){
+    	location.href = "sysctrl.cgi?cud="+document.getElementById("kont3").value+"&n=0";
+
+    }else if(t=="404"){
+   	    if (confirm("Sigurni ste?") == true) {
+            location.href = "sysctrl.cgi?cua="+document.getElementById("kont3").value+"&n=0";
+        }
+    }else if(t=="5"){
+    	location.href = "sysctrl.cgi?sud="+document.getElementById("kont4").value+"&slo="+document.getElementById("kont4l").value+"&ska="+document.getElementById("kont4k").value+"&sda="+document.getElementById("kont4d").value+"&n=0";
+	
+	}else if(t=="6"){
+    	location.href = "sysctrl.cgi?rud="+document.getElementById("kont6").value+"&n=0";     
+   
+    }else if(t=="7"){if(document.getElementById("kont71").value==0){alert("Niste upisali adresu novog kontrolera!");return;}
+    	 if (confirm("Sigurni ste?") == true) {
+                     location.href = "sysctrl.cgi?iud="+document.getElementById("kont7").value+"&iun="+document.getElementById("kont71").value+"&n=0";
+         }
+    }else if(t=="8"){
+    	location.href = "sysctrl.cgi?rst="+document.getElementById("kont8").value+"&n=0";
+
+    }else if(t=="9"){
+    	 if (confirm("Sigurni ste?") == true) {
+                     location.href = "sysctrl.cgi?sld="+document.getElementById("kont9").value+"&sli="+document.getElementById("kont91").value+"&n=0";
+         }
+   }else if(t=="919"){
+    	 if (confirm("Sigurni ste?") == true) {
+                     location.href = "sysctrl.cgi?sle="+document.getElementById("kont9").value+"&sla="+document.getElementById("kont91").value+"&n=0";
+         }
+   } else if (t == "929") {
+       if (confirm("Sigurni ste?") == true) {
+                    location.href = "sysctrl.cgi?slo="+document.getElementById("kont9").value+"&slv="+document.getElementById("kont91").value+"&n=0";
+       }
+   }else if(t=="11"){
+        var tem=document.getElementById("kont1la").value ;
+        var dif=document.getElementById("kont1lb").value ;
+        if(document.getElementById("kont1lc").checked){tem=parseInt(tem)+64;};
+        if(document.getElementById("kont1ld").checked){tem=parseInt(tem)+128;} ;
+        if(document.getElementById("kont1le").checked){dif=parseInt(dif)+128;} ;
+    	location.href = "sysctrl.cgi?tca="+document.getElementById("kont11").value+"&tsp="+tem+"&tdf="+dif+"&n=0";
+
+    }else if(t=="12"){
+    	location.href = "sysctrl.cgi?stg="+document.getElementById("kont12").value+"&val="+document.getElementById("kontt12").value+"&n=0";
+
+    }
+}
+function zahtjevt(t){
+    var htt="";
+    if(t=="1"){htt = "sysctrl.cgi?cst="+document.getElementById("kont").value+"&n=0"; }
+    else if(t=="2"){
+    var n0=0;var n1=0;var n2=0;var n3=0;var n4=0;var n5=0;var n6=0;var n7=0;
+	if(document.getElementById("do0").checked){n0=1;};
+	if(document.getElementById("do1").checked){n1=1;};
+	if(document.getElementById("do2").checked){n2=1;};
+	if(document.getElementById("do3").checked){n3=1;};
+	if(document.getElementById("do4").checked){n4=1;};
+	if(document.getElementById("do5").checked){n5=1;};
+	if(document.getElementById("do6").checked){n6=1;};
+	if(document.getElementById("do7").checked){n7=1;};
+	htt = "sysctrl.cgi?cdo="+document.getElementById("kont1").value+"&do0="+n0+"&do1="+n1+"&do2="+n2+"&do3="+n3+"&do4="+n4+"&do5="+n5+"&do6="+n6+"&do7="+n7+"&n=0";
+    }else if(t=="3"){
+    	htt = "sysctrl.cgi?cbr="+document.getElementById("kont2").value+"&br="+(1000 - document.getElementById("br2").value)+"&n=0";
+
+    }
+
+     var xhttp  = new XMLHttpRequest();
+ xhttp.open("GET",htt, true);
+  xhttp.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+  xhttp.send();
+}
+</SCRIPT>

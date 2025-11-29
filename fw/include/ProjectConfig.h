@@ -113,7 +113,7 @@
 #define MAX_LOG_ENTRIES             512
 #define STATUS_BYTE_VALID           0x55
 #define STATUS_BYTE_EMPTY           0xFF
-#define LOG_RECORD_SIZE             (LOG_ENTRY_SIZE + 1)
+#define LOG_RECORD_SIZE             LOG_ENTRY_SIZE
 
 // --- TimeSync / NTP ---
 #define TIME_BROADCAST_INTERVAL_MS  6789

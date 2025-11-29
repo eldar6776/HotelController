@@ -277,8 +277,23 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
         {
             LOG_DEBUG(3, "[LogPull] Primljen LOG sa adrese 0x%X\n", m_current_pull_address);
             LogEntry newLog; 
-            memcpy((uint8_t*)&newLog, &packet[7], LOG_ENTRY_SIZE); // Koristi ispravnu veličinu
+            memcpy((uint8_t*)&newLog, &packet[7], LOG_ENTRY_SIZE);
+
+            // ========================================================================
+            // --- KLJUČNA ISPRAVKA: Replikacija logike iz hotel_ctrl.c ---
+            // Upisujemo adresu pošiljaoca (m_current_pull_address) u polje device_addr.
+            newLog.device_addr = m_current_pull_address;
+            // ========================================================================
             
+            // NOVI DEBUG LOG: Ispis heksadecimalnog sadržaja strukture newLog prije upisa
+            char log_hex_buffer[LOG_ENTRY_SIZE * 3 + 1];
+            log_hex_buffer[0] = '\0';
+            uint8_t* log_ptr = (uint8_t*)&newLog;
+            for (int i = 0; i < LOG_ENTRY_SIZE; i++) {
+                sprintf(log_hex_buffer + strlen(log_hex_buffer), "%02X ", log_ptr[i]);
+            }
+            LOG_DEBUG(3, "[LogPull] -> Pripremljen Log za upis: [ %s]\n", log_hex_buffer);
+
             if (m_eeprom_storage->WriteLog(&newLog) == LoggerStatus::LOGGER_OK)
             {
                 LOG_DEBUG(3, "[LogPull] -> Upisan log ID: %u sa kontrolera 0x%X\n", newLog.log_id, m_current_pull_address);

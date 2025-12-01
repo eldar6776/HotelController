@@ -217,6 +217,7 @@ bool HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseB
     uint8_t packet[MAX_PACKET_LENGTH];
     uint16_t length = CreateRs485Packet(cmd, packet);
 
+  
     // Odmah zauzmi magistralu i pošalji
     if (!m_rs485_service->SendPacket(packet, length))
     {

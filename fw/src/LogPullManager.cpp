@@ -273,23 +273,35 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
     else if (response_cmd == GET_LOG_LIST)
     {
         uint16_t data_len = packet[5];
-        if (data_len >= (LOG_ENTRY_SIZE + 2)) // Provjera da li paket sadrži kompletan log
+        // Provjera da li paket sadrži kompletan log od 16 bajtova.
+        // Format odgovora je [CMD] [LOG_ID] [LOG_DATA...], ukupno 18 bajtova (2+16)
+        if (data_len >= (LOG_RECORD_SIZE + 2)) 
         {
             LOG_DEBUG(3, "[LogPull] Primljen LOG sa adrese 0x%X\n", m_current_pull_address);
             LogEntry newLog; 
-            memcpy((uint8_t*)&newLog, &packet[7], LOG_ENTRY_SIZE);
-
+            // Kopiramo kompletan 16-bajtni log zapis koji počinje od 7. bajta paketa.
+            memcpy((uint8_t*)&newLog, &packet[7], LOG_RECORD_SIZE);
+            
             // ========================================================================
-            // --- KLJUČNA ISPRAVKA: Replikacija logike iz hotel_ctrl.c ---
-            // Upisujemo adresu pošiljaoca (m_current_pull_address) u polje device_addr.
-            newLog.device_addr = m_current_pull_address;
+            // --- KONAČNA ISPRAVKA: TAČNA REPLIKACIJA LOGIKE IZ hotel_ctrl.c ---
+            // Stari kod je radio `i2c_ee_buffer[3] = adr_H; i2c_ee_buffer[4] = adr_L;`
+            // NAKON što je kopirao log. Ovo je prepisivalo bajtove na tim pozicijama.
+            // Naša LogEntry struktura je niz od 16 bajtova.
+            // Event se nalazi na 3. bajtu (indeks 2).
+            // Adresa se upisuje na 4. i 5. bajt (indeksi 3 i 4).
+            
+            // Kasting u niz bajtova za direktnu manipulaciju
+            uint8_t* log_bytes = (uint8_t*)&newLog;
+            log_bytes[3] = (m_current_pull_address >> 8) & 0xFF; // Upis adrese (MSB) na 4. bajt
+            log_bytes[4] = m_current_pull_address & 0xFF;        // Upis adrese (LSB) na 5. bajt
+            // Originalni event na log_bytes[2] ostaje netaknut, što je ispravno ponašanje.
             // ========================================================================
             
             // NOVI DEBUG LOG: Ispis heksadecimalnog sadržaja strukture newLog prije upisa
-            char log_hex_buffer[LOG_ENTRY_SIZE * 3 + 1];
+            char log_hex_buffer[LOG_RECORD_SIZE * 3 + 1];
             log_hex_buffer[0] = '\0';
             uint8_t* log_ptr = (uint8_t*)&newLog;
-            for (int i = 0; i < LOG_ENTRY_SIZE; i++) {
+            for (int i = 0; i < LOG_RECORD_SIZE; i++) {
                 sprintf(log_hex_buffer + strlen(log_hex_buffer), "%02X ", log_ptr[i]);
             }
             LOG_DEBUG(3, "[LogPull] -> Pripremljen Log za upis: [ %s]\n", log_hex_buffer);

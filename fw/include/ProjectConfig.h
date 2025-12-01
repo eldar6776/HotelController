@@ -98,7 +98,7 @@
 
 // --- TimeSync Komande ---
 #define SET_RTC_DATE_TIME           0xD5
-#define RTC_PACKET_LENGTH           17
+#define RTC_PACKET_LENGTH           22
 
 // --- LogPull Komande ---
 #define GET_SYS_STAT                0xA0

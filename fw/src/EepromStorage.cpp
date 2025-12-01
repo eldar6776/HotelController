@@ -382,23 +382,27 @@ String EepromStorage::ReadLogBlockAsHexString()
         return HTTP_RESPONSE_EMPTY;
     }
 
-    // 1. Definiši maksimalnu veličinu bloka i bafer (kao stari I2CEE_BLOCK)
-    const uint16_t max_bytes_to_read = 256;
-    uint8_t data_buffer[max_bytes_to_read];
+    // ========================================================================
+    // --- ISPRAVKA: Replikacija logike starog sistema (fiksni blok od 256B) ---
+    // Uvijek se čita blok od 256 bajtova. Ako nema dovoljno logova,
+    // ostatak bafera se popunjava nulama (zero-fill).
+    // ========================================================================
+    const uint16_t BLOCK_SIZE = 256; // Fiksna veličina bloka kao na starom sistemu
+    uint8_t data_buffer[BLOCK_SIZE];
 
     // 2. Izračunaj koliko logova treba pročitati
-    uint16_t logs_in_block = max_bytes_to_read / LOG_RECORD_SIZE; // 256 / 16 = 16
+    uint16_t logs_in_block = BLOCK_SIZE / LOG_RECORD_SIZE; // 256 / 16 = 16
     uint16_t logs_to_read = min((uint16_t)m_log_count, logs_in_block);
     uint16_t total_bytes_to_read = logs_to_read * LOG_RECORD_SIZE;
 
     LOG_DEBUG(3, "[Eeprom] -> Čitam %u logova (%u bajtova).\n", logs_to_read, total_bytes_to_read);
 
-    // 3. Pročitaj logove jedan po jedan da bi se ispravno rukovalo kružnim baferom
+    // 3. Pročitaj validne logove u bafer
     for (uint16_t i = 0; i < logs_to_read; ++i)
     {
         // Izračunaj indeks i adresu trenutnog loga u kružnom baferu
         uint16_t current_log_index = (m_log_read_index + i) % MAX_LOG_ENTRIES;
-        uint16_t read_addr = EEPROM_LOG_START_ADDR + (current_log_index * LOG_RECORD_SIZE);
+        uint16_t read_addr = EEPROM_LOG_START_ADDR + (current_log_index * LOG_ENTRY_SIZE);
         
         // Adresa u odredišnom baferu
         uint8_t* dest_buffer = data_buffer + (i * LOG_RECORD_SIZE);
@@ -410,10 +414,17 @@ String EepromStorage::ReadLogBlockAsHexString()
         }
     }
 
+    // 4. Popuni ostatak bafera nulama (zero-fill)
+    if (total_bytes_to_read < BLOCK_SIZE)
+    {
+        memset(data_buffer + total_bytes_to_read, 0, BLOCK_SIZE - total_bytes_to_read);
+        LOG_DEBUG(4, "[Eeprom] -> Popunjeno %u bajtova nulama.\n", BLOCK_SIZE - total_bytes_to_read);
+    }
+
     // 4. Replikacija `Hex2Str` funkcije
     String hex_string = "";
-    hex_string.reserve(total_bytes_to_read * 2); // Pre-alokacija za performanse
-    for (uint16_t i = 0; i < total_bytes_to_read; i++)
+    hex_string.reserve(BLOCK_SIZE * 2); // Uvijek alociraj za 512 karaktera
+    for (uint16_t i = 0; i < BLOCK_SIZE; i++)
     {
         char hex_buf[3];
         sprintf(hex_buf, "%02X", data_buffer[i]);

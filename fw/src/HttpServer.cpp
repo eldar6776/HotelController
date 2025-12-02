@@ -181,16 +181,8 @@ void HttpServer::SendSSIResponse(AsyncWebServerRequest *request, const String &m
     response += "<html>\r\n";
     response += "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=windows-1252\">\r\n";
     response += "<meta content=\"MSHTML 6.00.2800.1561\" name=\"GENERATOR\">\r\n";
-    response += "<body>\r\n";    
-    // ========================================================================
-    // --- ISPRAVKA: Replikacija tačnog formata odgovora sa starog sistema ---
-    // Stari sistem je vraćao SSI tag <!--#t--> unutar $...$ omotača.
-    // Takođe, originalni odgovor je bio unutar <span> taga.
-    // ========================================================================
-    response += "<span id=\"log0\">\r\n";
-    response += "$<!--#t-->" + message + "$\r\n";
-    response += "</span>\r\n";
-
+    response += "<body>\r\n";
+    response += "$" + message + "$\r\n";
     response += "</body>\r\n";
     response += "</html>\r\n";
     
@@ -361,6 +353,30 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         if (m_eeprom_storage->WriteConfig(&g_appConfig))
         {
             SendSSIResponse(request, HTTP_RESPONSE_OK);
+        }
+        else
+        {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+        }
+        return;
+    }
+
+    // --- NEW: HC set protocol version: proto ---
+    if (request->hasParam("proto"))
+    {
+        uint8_t proto_val = request->getParam("proto")->value().toInt();
+        if (proto_val <= static_cast<uint8_t>(ProtocolVersion::SAX)) // Validate enum range
+        {
+            g_appConfig.protocol_version = proto_val;
+            if (m_eeprom_storage->WriteConfig(&g_appConfig))
+            {
+                Serial.printf("[HttpServer] Postavljena verzija protokola: %d\n", proto_val);
+                SendSSIResponse(request, HTTP_RESPONSE_OK);
+            }
+            else
+            {
+                SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            }
         }
         else
         {

@@ -10,6 +10,23 @@
 #pragma once
 
 //=============================================================================
+// PROTOCOL VERSION ENUM - Definicije svih protokola
+//=============================================================================
+enum class ProtocolVersion
+{
+    HILLS,
+    BJELASNICA,
+    SAPLAST,
+    BOSS,
+    VUCKO,
+    ULM,
+    VRATA_BOSNE,
+    BASKUCA,
+    DZAFIC,
+    SAX
+};
+
+//=============================================================================
 // 1. HARDVERSKA MAPA PINOVA (LILYGO T-Internet-POE)
 //=============================================================================
 
@@ -98,7 +115,7 @@
 
 // --- TimeSync Komande ---
 #define SET_RTC_DATE_TIME           0xD5
-#define RTC_PACKET_LENGTH           22
+#define RTC_PACKET_LENGTH           17
 
 // --- LogPull Komande ---
 #define GET_SYS_STAT                0xA0

@@ -45,11 +45,14 @@ void EepromStorage::LoadDefaultConfig()
     // 3. Sistem
     g_appConfig.system_id = DEFAULT_SYSTEM_ID;
     
-    // 4. mDNS Ime (kopiranje stringa)
+    // 4. Verzija protokola (default: HILLS)
+    g_appConfig.protocol_version = static_cast<uint8_t>(ProtocolVersion::HILLS);
+    
+    // 5. mDNS Ime (kopiranje stringa)
     memset(g_appConfig.mdns_name, 0, sizeof(g_appConfig.mdns_name));
     strncpy(g_appConfig.mdns_name, DEFAULT_MDNS_NAME, sizeof(g_appConfig.mdns_name) - 1);
 
-    // 5. Snimi nove (defaultne) vrijednosti u EEPROM
+    // 6. Snimi nove (defaultne) vrijednosti u EEPROM
     if (WriteConfig(&g_appConfig))
     {
         LOG_DEBUG(3, "[Eeprom] Podrazumijevane vrijednosti uspješno snimljene u EEPROM.\n");

@@ -28,6 +28,7 @@ struct AppConfig
     uint16_t rs485_bcast_addr;
     uint16_t system_id;
     char mdns_name[32];
+    uint8_t protocol_version; // ProtocolVersion enum
 };
 
 // Definicija strukture za log (16 bajtova)

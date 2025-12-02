@@ -17,6 +17,14 @@
 #include <Wire.h>
 #include "ProjectConfig.h"
 
+// Definicija strukture za dodatni TimeSync paket
+struct AdditionalSyncPacket
+{
+    uint8_t enabled;           // 0 = onemogućeno, 1 = omogućeno
+    uint8_t protocol_version;  // ProtocolVersion enum
+    uint16_t broadcast_addr;   // Broadcast adresa za ovaj paket
+};
+
 // Definicija strukture za konfiguraciju
 struct AppConfig
 {
@@ -28,7 +36,8 @@ struct AppConfig
     uint16_t rs485_bcast_addr;
     uint16_t system_id;
     char mdns_name[32];
-    uint8_t protocol_version; // ProtocolVersion enum
+    uint8_t protocol_version; // Glavni ProtocolVersion enum
+    AdditionalSyncPacket additional_sync[3]; // Do 3 dodatna TimeSync paketa
 };
 
 // Definicija strukture za log (16 bajtova)

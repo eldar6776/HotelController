@@ -171,6 +171,129 @@ void TimeSync::SendTimeBroadcast()
             break;
         }
     }
+
+    // --- Slanje dodatnih TimeSync paketa ---
+    LOG_DEBUG(3, "[TimeSync] Provjera dodatnih paketa:\n");
+    for (int i = 0; i < 3; i++)
+    {
+        LOG_DEBUG(3, "[TimeSync]   [%d] enabled=%d, protocol=%d, address=%d\n", 
+            i, 
+            g_appConfig.additional_sync[i].enabled,
+            g_appConfig.additional_sync[i].protocol_version,
+            g_appConfig.additional_sync[i].broadcast_addr);
+        
+        // STROGA PROVJERA: Samo enabled==1 je validno, sve ostalo je disabled
+        if (g_appConfig.additional_sync[i].enabled != 1)
+        {
+            LOG_DEBUG(3, "[TimeSync]   [%d] PRESKOČEN (enabled!= 1)\n", i);
+            continue;
+        }
+
+        LOG_DEBUG(3, "[TimeSync]   [%d] ŠALJE SE paket\n", i);
+        ProtocolVersion add_proto = static_cast<ProtocolVersion>(g_appConfig.additional_sync[i].protocol_version);
+        uint16_t broadcast_addr = g_appConfig.additional_sync[i].broadcast_addr;
+
+        switch (add_proto)
+        {
+            case ProtocolVersion::HILLS:
+            case ProtocolVersion::BJELASNICA:
+            case ProtocolVersion::SAPLAST:
+            {
+                // RUBICON protokol - 22 bajta
+                uint8_t packet[22];
+                uint8_t bcd_val;
+                
+                packet[0] = SOH;
+                packet[1] = (broadcast_addr >> 8);
+                packet[2] = (broadcast_addr & 0xFFU);
+                packet[3] = 0x00;
+                packet[4] = 0x00;
+                packet[5] = 0x0d;
+                packet[6] = SET_RTC_DATE_TIME;
+                
+                bcd_val = toBCD(updt->tm_mday);
+                packet[7] = (bcd_val >> 4) + 48;
+                packet[8] = (bcd_val & 0x0F) + 48;
+                
+                bcd_val = toBCD(updt->tm_mon + 1);
+                packet[9] = (bcd_val >> 4) + 48;
+                packet[10] = (bcd_val & 0x0F) + 48;
+
+                bcd_val = toBCD(updt->tm_year % 100);
+                packet[11] = (bcd_val >> 4) + 48;
+                packet[12] = (bcd_val & 0x0F) + 48;
+                
+                bcd_val = toBCD(updt->tm_hour);
+                packet[13] = (bcd_val >> 4) + 48;
+                packet[14] = (bcd_val & 0x0F) + 48;
+
+                bcd_val = toBCD(updt->tm_min);
+                packet[15] = (bcd_val >> 4) + 48;
+                packet[16] = (bcd_val & 0x0F) + 48;
+
+                bcd_val = toBCD(updt->tm_sec);
+                packet[17] = (bcd_val >> 4) + 48;
+                packet[18] = (bcd_val & 0x0F) + 48;
+
+                rs485_pkt_chksum = 0;
+                for (uint8_t j = 6; j < 19; j++)
+                {
+                    rs485_pkt_chksum += packet[j];
+                }
+
+                packet[19] = (rs485_pkt_chksum >> 8);
+                packet[20] = (rs485_pkt_chksum & 0xFFU);
+                packet[21] = EOT;
+
+                LOG_DEBUG(3, "[TimeSync] Dodatni RUBICON paket [%d] (22B) na adresu %d\n", i, broadcast_addr);
+                m_rs485_service->SendPacket(packet, 22);
+                break;
+            }
+            
+            case ProtocolVersion::BOSS:
+            case ProtocolVersion::VUCKO:
+            case ProtocolVersion::ULM:
+            case ProtocolVersion::VRATA_BOSNE:
+            case ProtocolVersion::BASKUCA:
+            case ProtocolVersion::DZAFIC:
+            case ProtocolVersion::SAX:
+            default:
+            {
+                // HC protokol - 17 bajtova
+                uint8_t packet[17];
+                uint8_t weekday = (updt->tm_wday == 0) ? 7 : updt->tm_wday;
+                
+                packet[0] = SOH;
+                packet[1] = (broadcast_addr >> 8);
+                packet[2] = (broadcast_addr & 0xFFU);
+                packet[3] = 0x00;
+                packet[4] = 0x00;
+                packet[5] = 0x08;
+                packet[6] = SET_RTC_DATE_TIME;
+                packet[7] = toBCD(weekday);
+                packet[8] = toBCD(updt->tm_mday);
+                packet[9] = toBCD(updt->tm_mon + 1);
+                packet[10] = toBCD(updt->tm_year % 100);
+                packet[11] = toBCD(updt->tm_hour);
+                packet[12] = toBCD(updt->tm_min);
+                packet[13] = toBCD(updt->tm_sec);
+
+                rs485_pkt_chksum = 0;
+                for (uint8_t j = 6; j < 14; j++)
+                {
+                    rs485_pkt_chksum += packet[j];
+                }
+
+                packet[14] = (rs485_pkt_chksum >> 8);
+                packet[15] = (rs485_pkt_chksum & 0xFFU);
+                packet[16] = EOT;
+
+                LOG_DEBUG(3, "[TimeSync] Dodatni HC paket [%d] (17B) na adresu %d\n", i, broadcast_addr);
+                m_rs485_service->SendPacket(packet, 17);
+                break;
+            }
+        }
+    }
 }
 
 /**

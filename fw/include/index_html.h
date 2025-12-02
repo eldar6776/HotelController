@@ -67,25 +67,22 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     <input id="kont106" value="Promjena adresa" type="button" onclick="send_event(106)">
     <hr>
     
-    <!-- NEW: Protocol Version Selection -->
-    <div class="protocol-section">
-    <strong>Verzija protokola:</strong>
-    <select id="kont107" name="protocol_version" style="width: 150px;" 
-            title="Odabir verzije protokola za različite instalacije. Različiti protokoli koriste različite formate za TimeSync broadcast pakete.">
+    <!-- NEW: Protocol Selection -->
+    <h3>Podešavanje Protokola</h3>
+    Glavni protokol sistema:
+    <select id="kont110" name="main_protocol">
         <option value="0">Hills</option>
-        <option value="1">Bjelašnica</option>
+        <option value="1" selected>Bjelašnica</option>
         <option value="2">Saplast</option>
         <option value="3">Boss</option>
         <option value="4">Vučko</option>
-        <option value="5">Ulm</option>
+        <option value="5">ULM</option>
         <option value="6">Vrata Bosne</option>
-        <option value="7">Baškuca</option>
+        <option value="7">Baškuća</option>
         <option value="8">Džafić</option>
         <option value="9">Sax</option>
     </select>
-    <input id="kont108" value="Postavi verziju protokola" type="button" onclick="send_event(108)" 
-           title="Postavi odabranu verziju protokola i sačuvaj u konfiguraciju">
-    </div>
+    <input value="Snimi Protokol" type="button" onclick="send_event(111)">
     <hr>
     
     <!-- NEW: Address List Management -->
@@ -184,6 +181,72 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             <input type="text" id="newFolderName" placeholder="Ime novog foldera..." style="flex-grow: 1; padding: 6px;">
             <input type="button" value="Kreiraj Folder" onclick="create_folder()" style="background-color: #17a2b8;">
         </div>
+    </div>
+    <hr>
+
+    <!-- NEW: Additional TimeSync Section -->
+    <div class="file-section">
+        <h3>Dodatni Time-Sync Paketi</h3>
+        <p style="font-size: 0.9em; color: #666;">Opciono, pošalji dodatne time-sync pakete za specifične protokole na različite broadcast adrese.</p>
+        
+        <!-- Paket 1 -->
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <input type="checkbox" id="sync_en_0" title="Omogući ovaj paket">
+            <label for="sync_en_0">Paket 1:</label>
+            <select id="sync_proto_0">
+                <option value="0">Hills</option>
+                <option value="1">Bjelašnica</option>
+                <option value="2">Saplast</option>
+                <option value="3">Boss</option>
+                <option value="4">Vučko</option>
+                <option value="5">ULM</option>
+                <option value="6">Vrata Bosne</option>
+                <option value="7">Baškuća</option>
+                <option value="8">Džafić</option>
+                <option value="9">Sax</option>
+            </select>
+            <input type="number" id="sync_addr_0" placeholder="Broadcast adresa" value="0" style="width: 120px;">
+        </div>
+        
+        <!-- Paket 2 -->
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <input type="checkbox" id="sync_en_1" title="Omogući ovaj paket">
+            <label for="sync_en_1">Paket 2:</label>
+            <select id="sync_proto_1">
+                <option value="0">Hills</option>
+                <option value="1">Bjelašnica</option>
+                <option value="2">Saplast</option>
+                <option value="3">Boss</option>
+                <option value="4">Vučko</option>
+                <option value="5">ULM</option>
+                <option value="6">Vrata Bosne</option>
+                <option value="7">Baškuća</option>
+                <option value="8">Džafić</option>
+                <option value="9">Sax</option>
+            </select>
+            <input type="number" id="sync_addr_1" placeholder="Broadcast adresa" value="0" style="width: 120px;">
+        </div>
+        
+        <!-- Paket 3 -->
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <input type="checkbox" id="sync_en_2" title="Omogući ovaj paket">
+            <label for="sync_en_2">Paket 3:</label>
+            <select id="sync_proto_2">
+                <option value="0">Hills</option>
+                <option value="1">Bjelašnica</option>
+                <option value="2">Saplast</option>
+                <option value="3">Boss</option>
+                <option value="4">Vučko</option>
+                <option value="5">ULM</option>
+                <option value="6">Vrata Bosne</option>
+                <option value="7">Baškuća</option>
+                <option value="8">Džafić</option>
+                <option value="9">Sax</option>
+            </select>
+            <input type="number" id="sync_addr_2" placeholder="Broadcast adresa" value="0" style="width: 120px;">
+        </div>
+        
+        <input type="button" value="Snimi Dodatne Sync Pakete" onclick="send_event(600)" style="margin-top: 10px;">
     </div>
     
     </div>
@@ -472,9 +535,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 "&rga=" + document.getElementById("kont103").value + "&rba=" + document.getElementById("kont104").value +
                 "&rib=" + document.getElementById("kont105").value;
         }
-        else if (t == "108") {
-            // NEW: Protocol version change
-            htt = "sysctrl.cgi?proto=" + document.getElementById("kont107").value;
+        else if (t == "111") { // Snimanje glavnog protokola
+            htt = "sysctrl.cgi?set_proto=" + document.getElementById("kont110").value;
         }
         else if (t == "301") {
             htt = "sysctrl.cgi?cst=" + document.getElementById("kont101").value;
@@ -535,10 +597,62 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         else if (t == "581") {
             htt = "sysctrl.cgi?sid=" + document.getElementById("kont101").value + "&nid=" + document.getElementById("kont580").value;
         }
+        else if (t == "600") { // Snimanje dodatnih sync paketa
+            htt = "sysctrl.cgi?set_add_sync=1";
+            for (let i = 0; i < 3; i++) {
+                const enabled = document.getElementById(`sync_en_${i}`).checked;
+                const protocol = document.getElementById(`sync_proto_${i}`).value;
+                const address = document.getElementById(`sync_addr_${i}`).value;
+                
+                // Šaljemo uvijek sve parametre
+                if (enabled && parseInt(address) > 0) {
+                    htt += `&sync_en${i}=1&sync_p${i}=${protocol}&sync_a${i}=${address}`;
+                } else {
+                    // Ako nije enabled, šaljemo enabled=0
+                    htt += `&sync_en${i}=0&sync_p${i}=0&sync_a${i}=0`;
+                }
+            }
+        }
         
         if (htt) {
             send_request(htt);
         }
     }
+
+    // Funkcija za učitavanje postojećih vrednosti iz EEPROM-a
+    function loadSyncConfig() {
+        fetch('/get_sync_config')
+            .then(response => response.json())
+            .then(data => {
+                // Postavi glavni protokol
+                const mainProtoSelect = document.getElementById('kont110');
+                if (mainProtoSelect && data.main_protocol !== undefined) {
+                    mainProtoSelect.value = data.main_protocol;
+                }
+
+                // Postavi dodatne TimeSync pakete
+                if (data.sync && data.sync.length === 3) {
+                    for (let i = 0; i < 3; i++) {
+                        const enabled = data.sync[i].enabled !== 0;
+                        const protocol = data.sync[i].protocol;
+                        const address = data.sync[i].address;
+
+                        const checkbox = document.getElementById(`sync_en_${i}`);
+                        const protoSelect = document.getElementById(`sync_proto_${i}`);
+                        const addrInput = document.getElementById(`sync_addr_${i}`);
+
+                        if (checkbox) checkbox.checked = enabled;
+                        if (protoSelect) protoSelect.value = protocol;
+                        if (addrInput) addrInput.value = address;
+                    }
+                }
+            })
+            .catch(error => console.error('Error loading sync config:', error));
+    }
+
+    // Inicijalizacija na učitavanju stranice
+    window.onload = function() {
+        loadSyncConfig();
+    };
 </SCRIPT>
 )rawliteral";

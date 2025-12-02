@@ -48,11 +48,19 @@ void EepromStorage::LoadDefaultConfig()
     // 4. Verzija protokola (default: HILLS)
     g_appConfig.protocol_version = static_cast<uint8_t>(ProtocolVersion::HILLS);
     
-    // 5. mDNS Ime (kopiranje stringa)
+    // 5. Dodatni TimeSync paketi (default: svi onemogućeni)
+    for (int i = 0; i < 3; i++)
+    {
+        g_appConfig.additional_sync[i].enabled = 0;
+        g_appConfig.additional_sync[i].protocol_version = 0;
+        g_appConfig.additional_sync[i].broadcast_addr = 0;
+    }
+    
+    // 6. mDNS Ime (kopiranje stringa)
     memset(g_appConfig.mdns_name, 0, sizeof(g_appConfig.mdns_name));
     strncpy(g_appConfig.mdns_name, DEFAULT_MDNS_NAME, sizeof(g_appConfig.mdns_name) - 1);
 
-    // 6. Snimi nove (defaultne) vrijednosti u EEPROM
+    // 7. Snimi nove (defaultne) vrijednosti u EEPROM
     if (WriteConfig(&g_appConfig))
     {
         LOG_DEBUG(3, "[Eeprom] Podrazumijevane vrijednosti uspješno snimljene u EEPROM.\n");
@@ -86,7 +94,20 @@ void EepromStorage::Initialize(int8_t sda_pin, int8_t scl_pin)
         }
         else
         {
-            LOG_DEBUG(3, "[Eeprom] Konfiguracija ucitana. RS485 Adresa: 0x%X\n", g_appConfig.rs485_iface_addr);
+            LOG_DEBUG(3, "[Eeprom] Konfiguracija ucitana:\n");
+            LOG_DEBUG(3, "[Eeprom]   RS485 Iface: 0x%04X\n", g_appConfig.rs485_iface_addr);
+            LOG_DEBUG(3, "[Eeprom]   RS485 Group: 0x%04X\n", g_appConfig.rs485_group_addr);
+            LOG_DEBUG(3, "[Eeprom]   RS485 Bcast: 0x%04X\n", g_appConfig.rs485_bcast_addr);
+            LOG_DEBUG(3, "[Eeprom]   Glavni Protokol: %d\n", g_appConfig.protocol_version);
+            LOG_DEBUG(3, "[Eeprom]   Dodatni TimeSync paketi:\n");
+            for (int i = 0; i < 3; i++)
+            {
+                LOG_DEBUG(3, "[Eeprom]     [%d] enabled=%d, protocol=%d, address=%d\n",
+                    i,
+                    g_appConfig.additional_sync[i].enabled,
+                    g_appConfig.additional_sync[i].protocol_version,
+                    g_appConfig.additional_sync[i].broadcast_addr);
+            }
         }
     }
 

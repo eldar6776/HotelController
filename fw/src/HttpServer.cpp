@@ -143,6 +143,27 @@ void HttpServer::Initialize(
             request->send(400, "text/plain", "Missing 'old' or 'new' parameter");
         } });
 
+    // 5. NEW: Endpoint za čitanje dodatnih TimeSync paketa
+    m_server.on("/get_sync_config", HTTP_GET, [this](AsyncWebServerRequest *request)
+                {
+        String json = "{\"sync\":[";
+        for (int i = 0; i < 3; i++)
+        {
+            if (i > 0) json += ",";
+            json += "{\"enabled\":";
+            json += String(g_appConfig.additional_sync[i].enabled);
+            json += ",\"protocol\":";
+            json += String(g_appConfig.additional_sync[i].protocol_version);
+            json += ",\"address\":";
+            json += String(g_appConfig.additional_sync[i].broadcast_addr);
+            json += "}";
+        }
+        json += "],\"main_protocol\":";
+        json += String(g_appConfig.protocol_version);
+        json += "}";
+        request->send(200, "application/json", json);
+    });
+
 
     m_server.onNotFound([this](AsyncWebServerRequest *request)
                         { this->HandleNotFound(request); });
@@ -377,6 +398,100 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             {
                 SendSSIResponse(request, HTTP_RESPONSE_ERROR);
             }
+        }
+        else
+        {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+        }
+        return;
+    }
+
+    // --- HC set main protocol: set_proto ---
+    if (request->hasParam("set_proto"))
+    {
+        uint8_t proto_val = request->getParam("set_proto")->value().toInt();
+        if (proto_val <= static_cast<uint8_t>(ProtocolVersion::SAX))
+        {
+            g_appConfig.protocol_version = proto_val;
+            if (m_eeprom_storage->WriteConfig(&g_appConfig))
+            {
+                Serial.printf("[HttpServer] Glavni protokol postavljen: %d\n", proto_val);
+                SendSSIResponse(request, HTTP_RESPONSE_OK);
+            }
+            else
+            {
+                SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            }
+        }
+        else
+        {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+        }
+        return;
+    }
+
+    // --- HC set additional sync packets: set_add_sync ---
+    if (request->hasParam("set_add_sync"))
+    {
+        bool all_valid = true;
+        for (int i = 0; i < 3; i++)
+        {
+            String en_param = "sync_en" + String(i);
+            String p_param = "sync_p" + String(i);
+            String a_param = "sync_a" + String(i);
+
+            // Uvijek treba biti prisutan parametar
+            if (request->hasParam(en_param.c_str()))
+            {
+                uint8_t enabled = request->getParam(en_param.c_str())->value().toInt();
+                // STROGA VALIDACIJA: samo 1 je enabled, sve ostalo je 0
+                g_appConfig.additional_sync[i].enabled = (enabled == 1) ? 1 : 0;
+
+                if (g_appConfig.additional_sync[i].enabled == 1)
+                {
+                    if (request->hasParam(p_param.c_str()))
+                    {
+                        uint8_t protocol = request->getParam(p_param.c_str())->value().toInt();
+                        if (protocol <= static_cast<uint8_t>(ProtocolVersion::SAX))
+                        {
+                            g_appConfig.additional_sync[i].protocol_version = protocol;
+                        }
+                        else
+                        {
+                            all_valid = false;
+                            break;
+                        }
+                    }
+
+                    if (request->hasParam(a_param.c_str()))
+                    {
+                        uint16_t address = request->getParam(a_param.c_str())->value().toInt();
+                        g_appConfig.additional_sync[i].broadcast_addr = address;
+                    }
+                }
+                else
+                {
+                    // Ako je disabled, resetuj vrednosti
+                    g_appConfig.additional_sync[i].protocol_version = 0;
+                    g_appConfig.additional_sync[i].broadcast_addr = 0;
+                }
+            }
+        }
+
+        if (all_valid && m_eeprom_storage->WriteConfig(&g_appConfig))
+        {
+            Serial.println("[HttpServer] Dodatni TimeSync paketi postavljeni:");
+            for (int i = 0; i < 3; i++)
+            {
+                if (g_appConfig.additional_sync[i].enabled != 0)
+                {
+                    Serial.printf("  [%d] Protokol: %d, Adresa: %d\n", 
+                        i, 
+                        g_appConfig.additional_sync[i].protocol_version,
+                        g_appConfig.additional_sync[i].broadcast_addr);
+                }
+            }
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
         }
         else
         {

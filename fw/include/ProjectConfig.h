@@ -127,7 +127,7 @@ enum class ProtocolVersion
 //=============================================================================
 #define MAX_ADDRESS_LIST_SIZE       500
 #define LOG_ENTRY_SIZE              16
-#define MAX_LOG_ENTRIES             512
+#define MAX_LOG_ENTRIES             3900  // ISPRAVKA: Ograničeno na 62KB umjesto 65KB da stane u 16-bit adresiranje
 #define STATUS_BYTE_VALID           0x55
 #define STATUS_BYTE_EMPTY           0xFF
 #define LOG_RECORD_SIZE             LOG_ENTRY_SIZE

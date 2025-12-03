@@ -20,7 +20,6 @@
 #include "UpdateManager.h"
 #include "EepromStorage.h"
 #include "SdCardManager.h"
-#include "log_html.h" // SSI Template
 #include "HttpResponseStrings.h" // NOVO: Uključujemo centralizovane stringove
 #include <SD.h>
 #include <cstring>
@@ -202,8 +201,16 @@ void HttpServer::SendSSIResponse(AsyncWebServerRequest *request, const String &m
     response += "<html>\r\n";
     response += "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=windows-1252\">\r\n";
     response += "<meta content=\"MSHTML 6.00.2800.1561\" name=\"GENERATOR\">\r\n";
-    response += "<body>\r\n";
-    response += "$" + message + "$\r\n";
+    response += "<body>\r\n";    
+    // ========================================================================
+    // --- ISPRAVKA: Replikacija tačnog formata odgovora sa starog sistema ---
+    // Stari sistem je vraćao SSI tag <!--#t--> unutar $...$ omotača.
+    // Takođe, originalni odgovor je bio unutar <span> taga.
+    // ========================================================================
+    response += "<span id=\"log0\">\r\n";
+    response += "$<!--#t-->" + message + "$\r\n";
+    response += "</span>\r\n";
+
     response += "</body>\r\n";
     response += "</html>\r\n";
     

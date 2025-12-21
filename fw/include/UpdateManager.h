@@ -101,8 +101,22 @@ struct UpdateSession
 class UpdateManager
 {
 public:
+    /**
+     * @brief Konstruktor.
+     */
     UpdateManager();
+
+    /**
+     * @brief Inicijalizuje Update menadžera.
+     * @param pRs485Service Pointer na RS485 servis.
+     * @param pSdCardManager Pointer na SD Card menadžera.
+     */
     void Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCardManager);
+
+    /**
+     * @brief Postavlja referencu na HTTP server.
+     * @param pHttpServer Pointer na HTTP server.
+     */
     void SetHttpServer(class HttpServer* pHttpServer) { m_http_server = pHttpServer; }
 
     /**
@@ -119,8 +133,15 @@ public:
      */
     void StartImageUpdateSequence(uint16_t first_addr, uint16_t last_addr, uint8_t first_img, uint8_t last_img);
 
-    // Glavna funkcija koju poziva state-mašina
+    /**
+     * @brief Glavna funkcija koju poziva state-mašina.
+     */
     void Run();
+
+    /**
+     * @brief Provjerava da li je update aktivan.
+     * @return true ako je aktivan.
+     */
     bool IsActive();
     bool was_interrupted; // Flag za nastavak
 

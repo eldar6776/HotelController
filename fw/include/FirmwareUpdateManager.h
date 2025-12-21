@@ -75,13 +75,46 @@ struct FufUpdateSession
 class FirmwareUpdateManager
 {
 public:
+    /**
+     * @brief Konstruktor.
+     */
     FirmwareUpdateManager();
+
+    /**
+     * @brief Inicijalizuje menadžera sa potrebnim servisima.
+     * @param pRs485Service Pointer na RS485 servis.
+     * @param pSdCardManager Pointer na SD Card menadžera.
+     */
     void Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCardManager);
+
+    /**
+     * @brief Postavlja referencu na HTTP server.
+     * @param pHttpServer Pointer na HTTP server.
+     */
     void SetHttpServer(class HttpServer* pHttpServer) { m_http_server = pHttpServer; }
     
+    /**
+     * @brief Pokreće sekvencu ažuriranja firmvera za opseg adresa.
+     * @param first_addr Prva adresa u opsegu.
+     * @param last_addr Zadnja adresa u opsegu.
+     * @param type Tip ažuriranja (FIRMWARE ili BOOTLOADER).
+     */
     void StartFirmwareUpdateSequence(uint16_t first_addr, uint16_t last_addr, FufUpdateType type);
+
+    /**
+     * @brief Glavna petlja menadžera. Treba se pozivati periodično.
+     */
     void Run();
+
+    /**
+     * @brief Provjerava da li je proces ažuriranja aktivan.
+     * @return true ako je aktivan, false inače.
+     */
     bool IsActive();
+
+    /**
+     * @brief Zaustavlja trenutnu sekvencu ažuriranja.
+     */
     void StopSequence();
 
 private:

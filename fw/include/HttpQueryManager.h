@@ -58,7 +58,15 @@ struct HttpCommand
 class HttpQueryManager
 {
 public:
+    /**
+     * @brief Konstruktor.
+     */
     HttpQueryManager();
+
+    /**
+     * @brief Inicijalizuje menadžera.
+     * @param pRs485Service Pointer na RS485 servis.
+     */
     void Initialize(Rs485Service* pRs485Service);
 
     /**

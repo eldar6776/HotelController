@@ -25,9 +25,6 @@ class HttpServer;
 class NetworkManager
 {
 public:
-    // NOVO: Dajemo pristup HttpServer-u
-    void SetHttpServer(HttpServer* httpServer);
-
     NetworkManager();
     void Initialize();
     void StartTask(); // NOVO: Metoda za pokretanje zadatka
@@ -55,7 +52,6 @@ private:
     unsigned long m_last_ping_time;
     int m_ping_failures;
     TaskHandle_t m_task_handle; // NOVO: Handle za zadatak
-    HttpServer* m_http_server;  // NOVO: Pokazivač na HttpServer
     bool m_initialization_complete; // NOVO: Flag da je inicijalizacija završena
 };
 

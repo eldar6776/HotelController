@@ -96,11 +96,32 @@ void EepromStorage::Initialize(int8_t sda_pin, int8_t scl_pin)
         else
         {
             LOG_DEBUG(3, "[Eeprom] Konfiguracija ucitana:\n");
+            LOG_DEBUG(3, "[Eeprom]   === RS485 Konfiguracija ===\n");
             LOG_DEBUG(3, "[Eeprom]   RS485 Iface: 0x%04X\n", g_appConfig.rs485_iface_addr);
             LOG_DEBUG(3, "[Eeprom]   RS485 Group: 0x%04X\n", g_appConfig.rs485_group_addr);
             LOG_DEBUG(3, "[Eeprom]   RS485 Bcast: 0x%04X\n", g_appConfig.rs485_bcast_addr);
             LOG_DEBUG(3, "[Eeprom]   Glavni Protokol: %d\n", g_appConfig.protocol_version);
-            LOG_DEBUG(3, "[Eeprom]   Dodatni TimeSync paketi:\n");
+            
+            LOG_DEBUG(3, "[Eeprom]   === Mrežna Konfiguracija ===\n");
+            LOG_DEBUG(3, "[Eeprom]   IP Adresa: %d.%d.%d.%d\n",
+                (g_appConfig.ip_address >> 24) & 0xFF,
+                (g_appConfig.ip_address >> 16) & 0xFF,
+                (g_appConfig.ip_address >> 8) & 0xFF,
+                g_appConfig.ip_address & 0xFF);
+            LOG_DEBUG(3, "[Eeprom]   Subnet Mask: %d.%d.%d.%d\n",
+                (g_appConfig.subnet_mask >> 24) & 0xFF,
+                (g_appConfig.subnet_mask >> 16) & 0xFF,
+                (g_appConfig.subnet_mask >> 8) & 0xFF,
+                g_appConfig.subnet_mask & 0xFF);
+            LOG_DEBUG(3, "[Eeprom]   Gateway: %d.%d.%d.%d\n",
+                (g_appConfig.gateway >> 24) & 0xFF,
+                (g_appConfig.gateway >> 16) & 0xFF,
+                (g_appConfig.gateway >> 8) & 0xFF,
+                g_appConfig.gateway & 0xFF);
+            LOG_DEBUG(3, "[Eeprom]   mDNS Ime: %s\n", g_appConfig.mdns_name);
+            LOG_DEBUG(3, "[Eeprom]   System ID: %d\n", g_appConfig.system_id);
+            
+            LOG_DEBUG(3, "[Eeprom]   === Dodatni TimeSync Paketi ===\n");
             for (int i = 0; i < 3; i++)
             {
                 LOG_DEBUG(3, "[Eeprom]     [%d] enabled=%d, protocol=%d, address=%d\n",

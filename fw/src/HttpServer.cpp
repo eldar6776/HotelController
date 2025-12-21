@@ -353,9 +353,12 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     }
     Serial.println(F("[HttpServer] ========================================"));
 
-    // Provjera da li je update već u toku
-    if (m_update_manager->IsActive() || m_fuf_update_manager->IsActive()) // NOVO: Provera oba menadžera
+    // KRITIČNO: Blokiraj SVE sysctrl.cgi komande ako je file update u toku!
+    // Ovo sprječava RS485 konflikte između UpdateManager i ostalih komponenti.
+    // Implementirano identično kao u starim projektima (httpd_cgi_ssi_*.c).
+    if (m_update_manager->IsActive() || m_fuf_update_manager->IsActive())
     {
+        Serial.println(F("[HttpServer] *** FILE UPDATE U TOKU - sysctrl.cgi odbijen (BUSY) ***"));
         SendSSIResponse(request, HTTP_RESPONSE_BUSY);
         return;
     }

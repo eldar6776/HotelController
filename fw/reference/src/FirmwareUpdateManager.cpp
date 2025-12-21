@@ -13,13 +13,7 @@
 #include "FirmwareUpdateManager.h"
 #include "ProjectConfig.h"
 #include "TimeSync.h"
-#include "HttpServer.h"  // NAKON ostalih da izbjegnemo FILE_READ konflikt
 #include <cstring>
-
-// HttpServer.h može da override-uje FILE_READ macro, pa ga eksplicitno definišemo
-#ifndef FILE_READ
-#define FILE_READ "r"
-#endif
 
 // Globalna konfiguracija (extern)
 extern AppConfig g_appConfig;
@@ -74,6 +68,8 @@ void FirmwareUpdateManager::Initialize(Rs485Service* pRs485Service, SdCardManage
 {
     m_rs485_service = pRs485Service;
     m_sd_card_manager = pSdCardManager;
+    // Osvježi postavke protokola
+    m_rs485_service->SetProtocol(static_cast<ProtocolVersion>(g_appConfig.protocol_version));
 }
 
 bool FirmwareUpdateManager::IsActive()
@@ -315,7 +311,7 @@ void FirmwareUpdateManager::SendStartRequest()
     packet[5] = data_len;
     packet[6] = sub_cmd;
 
-    uint16_t total_packets = (s->file_size + UPDATE_DATA_CHUNK_SIZE - 1) / UPDATE_DATA_CHUNK_SIZE;
+    uint16_t total_packets = (s->file_size + m_rs485_service->GetChunkSize() - 1) / m_rs485_service->GetChunkSize();
     packet[7] = (total_packets >> 8) & 0xFF;
     packet[8] = total_packets & 0xFF;
 
@@ -346,7 +342,7 @@ void FirmwareUpdateManager::SendStartRequest()
 void FirmwareUpdateManager::SendDataPacket()
 {
     FufUpdateSession* s = &m_session;
-    int16_t bytes_read = s->file_handle.read(s->read_buffer, UPDATE_DATA_CHUNK_SIZE);
+    int16_t bytes_read = s->file_handle.read(s->read_buffer, m_rs485_service->GetChunkSize());
 
     if (bytes_read <= 0) {
         Serial.println(F("[FufManager] GREŠKA: Neočekivan kraj fajla."));

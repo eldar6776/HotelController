@@ -91,8 +91,6 @@ void setup()
     g_updateManager.Initialize(&g_rs485Service, &g_sdCardManager);
     g_timeSync.Initialize(&g_rs485Service);
 
-    g_networkManager.SetHttpServer(&g_httpServer);
-
     LOG_DEBUG(3, "[setup] Priprema HTTP Servera (ne pokreće se još)...\n");
     g_httpServer.Initialize(
         &g_httpQueryManager,

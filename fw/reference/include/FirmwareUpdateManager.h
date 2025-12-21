@@ -77,7 +77,6 @@ class FirmwareUpdateManager
 public:
     FirmwareUpdateManager();
     void Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCardManager);
-    
     void StartFirmwareUpdateSequence(uint16_t first_addr, uint16_t last_addr, FufUpdateType type);
     void Run();
     bool IsActive();

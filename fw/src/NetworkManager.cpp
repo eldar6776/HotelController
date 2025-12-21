@@ -39,7 +39,6 @@ NetworkManager::NetworkManager() :
     m_last_ping_time(0),
     m_ping_failures(0),
     m_task_handle(NULL),
-    m_http_server(NULL),
     m_initialization_complete(false) // NOVO: Inicijalizacija na false
 {
     // Konstruktor
@@ -96,11 +95,6 @@ void NetworkManager::WiFiEvent(WiFiEvent_t event)
     default:
         break;
     }
-}
-
-void NetworkManager::SetHttpServer(HttpServer* httpServer)
-{
-    m_http_server = httpServer;
 }
 
 
@@ -220,9 +214,32 @@ void NetworkManager::InitializeETH()
 {
     LOG_DEBUG(5, "[NetworkManager] Entering InitializeETH()...\n");
 
-    IPAddress localIP(g_appConfig.ip_address);
-    IPAddress gateway(g_appConfig.gateway);
-    IPAddress subnet(g_appConfig.subnet_mask);
+    // KRITIČNO: Konvertuj uint32_t u IPAddress sa ispravnim byte order-om!
+    // EEPROM čuva kao Big Endian (192.168.20.199 = 0xC0A814C7)
+    // Ali IPAddress(uint32_t) konstruktor očekuje Little Endian format!
+    IPAddress localIP(
+        (g_appConfig.ip_address >> 24) & 0xFF,
+        (g_appConfig.ip_address >> 16) & 0xFF,
+        (g_appConfig.ip_address >> 8) & 0xFF,
+        g_appConfig.ip_address & 0xFF
+    );
+    IPAddress gateway(
+        (g_appConfig.gateway >> 24) & 0xFF,
+        (g_appConfig.gateway >> 16) & 0xFF,
+        (g_appConfig.gateway >> 8) & 0xFF,
+        g_appConfig.gateway & 0xFF
+    );
+    IPAddress subnet(
+        (g_appConfig.subnet_mask >> 24) & 0xFF,
+        (g_appConfig.subnet_mask >> 16) & 0xFF,
+        (g_appConfig.subnet_mask >> 8) & 0xFF,
+        g_appConfig.subnet_mask & 0xFF
+    );
+    
+    Serial.printf("[NetworkManager] Konfigurisem ETH sa:\n");
+    Serial.printf("  IP:      %d.%d.%d.%d\n", localIP[0], localIP[1], localIP[2], localIP[3]);
+    Serial.printf("  Gateway: %d.%d.%d.%d\n", gateway[0], gateway[1], gateway[2], gateway[3]);
+    Serial.printf("  Subnet:  %d.%d.%d.%d\n", subnet[0], subnet[1], subnet[2], subnet[3]);
     
     // =================================================================================================
     // KLJUČNA ISPRAVKA: Ručni reset PHY čipa PRIJE poziva ETH.begin().

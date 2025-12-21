@@ -12,13 +12,7 @@
 #include "UpdateManager.h"
 #include "ProjectConfig.h" 
 #include "TimeSync.h"
-#include "HttpServer.h"  // NAKON ostalih da izbjegnemo FILE_READ konflikt
 #include <cstring>
-
-// HttpServer.h može da override-uje FILE_READ macro, pa ga eksplicitno definišemo
-#ifndef FILE_READ
-#define FILE_READ "r"
-#endif
 
 // Globalna konfiguracija (extern)
 extern AppConfig g_appConfig; 
@@ -73,102 +67,8 @@ void UpdateManager::Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCa
 {
     m_rs485_service = pRs485Service;
     m_sd_card_manager = pSdCardManager;
-}
-
-/**
- * @brief Vraća veličinu chunk-a (payload) za trenutni protokol.
- * @details STARI protokol (HILLS/SAX/BJELASNICA/SAPLAST/BOSS/BASKUCA): 64 bajta
- *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): 128 bajtova (default)
- * @return Veličina chunk-a u bajtovima (64 ili 128)
- * @note OVO SE ODNOSI SAMO NA UPDATE FAJLOVA, NE NA TRANSFER LOGOVA
- */
-uint16_t UpdateManager::GetChunkSizeForProtocol()
-{
-    ProtocolVersion proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version);
-    
-    switch (proto)
-    {
-        // GRUPA 1 - STARI PROTOKOL (64-bajtni chunk)
-        case ProtocolVersion::HILLS:
-        case ProtocolVersion::BJELASNICA:
-        case ProtocolVersion::SAPLAST:
-        case ProtocolVersion::SAX:
-        case ProtocolVersion::BOSS:
-        case ProtocolVersion::BASKUCA:
-            return 64;  // STARI protokol - manji chunk
-        
-        // GRUPA 2 - NOVI PROTOKOL (128-bajtni chunk) - TRENUTNO STANJE PROJEKTA
-        case ProtocolVersion::VUCKO:
-        case ProtocolVersion::ULM:
-        case ProtocolVersion::VRATA_BOSNE:
-        case ProtocolVersion::DZAFIC:
-        default:
-            return 128; // NOVI protokol - kako projekat trenutno radi
-    }
-}
-
-/**
- * @brief Vraća timeout za čekanje odgovora tokom update-a za trenutni protokol.
- * @details STARI protokol (HILLS/SAX/BJELASNICA/SAPLAST/BOSS/BASKUCA): 78ms
- *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): 45ms (default)
- * @return Timeout u milisekundama (78 ili 45)
- * @note OVO SE ODNOSI SAMO NA UPDATE FAJLOVA, NE NA TRANSFER LOGOVA
- */
-uint32_t UpdateManager::GetUpdateTimeoutForProtocol()
-{
-    ProtocolVersion proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version);
-    
-    switch (proto)
-    {
-        // GRUPA 1 - STARI PROTOKOL (duži timeout)
-        case ProtocolVersion::HILLS:
-        case ProtocolVersion::BJELASNICA:
-        case ProtocolVersion::SAPLAST:
-        case ProtocolVersion::SAX:
-        case ProtocolVersion::BOSS:
-        case ProtocolVersion::BASKUCA:
-            return 78;  // STARI protokol - duži timeout
-        
-        // GRUPA 2 - NOVI PROTOKOL (kraći timeout) - TRENUTNO STANJE PROJEKTA
-        case ProtocolVersion::VUCKO:
-        case ProtocolVersion::ULM:
-        case ProtocolVersion::VRATA_BOSNE:
-        case ProtocolVersion::DZAFIC:
-        default:
-            return 45;  // NOVI protokol - kako projekat trenutno radi
-    }
-}
-
-/**
- * @brief Provjerava da li trenutni protokol koristi single-byte ACK/NAK odgovore.
- * @details STARI protokol (HILLS/SAX/BJELASNICA/SAPLAST/BOSS/BASKUCA): true (1 bajt ACK/NAK)
- *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): false (puni ACK paket sa headerom)
- * @return true ako protokol koristi single-byte ACK/NAK, false inače
- * @note OVO SE ODNOSI SAMO NA UPDATE FAJLOVA, NE NA TRANSFER LOGOVA
- */
-bool UpdateManager::UseSingleByteAckForProtocol()
-{
-    ProtocolVersion proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version);
-    
-    switch (proto)
-    {
-        // GRUPA 1 - STARI PROTOKOL (single-byte ACK/NAK)
-        case ProtocolVersion::HILLS:
-        case ProtocolVersion::BJELASNICA:
-        case ProtocolVersion::SAPLAST:
-        case ProtocolVersion::SAX:
-        case ProtocolVersion::BOSS:
-        case ProtocolVersion::BASKUCA:
-            return true;   // STARI protokol - ACK/NAK kao 1 bajt
-        
-        // GRUPA 2 - NOVI PROTOKOL (puni ACK paket) - TRENUTNO STANJE PROJEKTA
-        case ProtocolVersion::VUCKO:
-        case ProtocolVersion::ULM:
-        case ProtocolVersion::VRATA_BOSNE:
-        case ProtocolVersion::DZAFIC:
-        default:
-            return false;  // NOVI protokol - kako projekat trenutno radi
-    }
+    // Osvježi postavke protokola
+    m_rs485_service->SetProtocol(static_cast<ProtocolVersion>(g_appConfig.protocol_version));
 }
 
 uint32_t UpdateManager::CalculateCRC32(File& file)
@@ -358,16 +258,6 @@ bool UpdateManager::StartSession(uint8_t clientAddress, uint8_t updateCmd)
         return false;
     }
 
-    // =================================================================================
-    // KRITIČNO: Aktiviraj single-byte mod ako je STARI protokol
-    // Ovo omogućava Rs485Service da prihvati single-byte ACK/NAK
-    // =================================================================================
-    if (UseSingleByteAckForProtocol())
-    {
-        m_rs485_service->EnableSingleByteMode();
-        Serial.println(F("[UpdateManager] STARI protokol detektovan - single-byte mod aktiviran"));
-    }
-
     Serial.printf("[UpdateManager] Sesija pokrenuta za klijenta 0x%X\n", clientAddress);
     
     m_session.state = UpdateState::S_STARTING;
@@ -457,8 +347,7 @@ void UpdateManager::Run()
                 if ((m_session.bytesSent + m_session.read_chunk_size) >= m_session.fw_size) {
                     response_timeout = (m_session.type == TYPE_FW_RC || m_session.type == TYPE_BLDR_RC) ? IMG_COPY_DEL : FWR_COPY_DEL;
                 } else {
-                    // PROMJENA: Koristi dinamički timeout za update umjesto hardkodirane konstante
-                    response_timeout = GetUpdateTimeoutForProtocol(); // 78ms (stari) ili 45ms (novi)
+                    response_timeout = UPDATE_PACKET_TIMEOUT_MS; // 45ms
                 }
                 break;
 
@@ -537,84 +426,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
         sprintf(packet_str + strlen(packet_str), "%02X ", packet[i]);
     }
     Serial.printf("  -> RAW Paket (%d B): [ %s]\n", length, packet_str);
-    
-    // =================================================================================
-    // --- KRITIČNA PROVJERA: STARI PROTOKOL (SAX/HILLS/itd) KORISTI SINGLE-BYTE ACK/NAK ---
-    // Ako je protokol postavljen na STARI i stigao je 1 bajt, to je VALIDNI odgovor!
-    // =================================================================================
-    if (UseSingleByteAckForProtocol() && length == 1)
-    {
-        uint8_t single_byte = packet[0];
-        Serial.printf("  -> STARI PROTOKOL: Single-byte odgovor: 0x%02X ", single_byte);
-        if (single_byte == ACK) Serial.println("(ACK)");
-        else if (single_byte == NAK) Serial.println("(NAK)");
-        else Serial.println("(NEPOZNAT)");
-        Serial.println(F("----------------------------------------------------"));
-        
-        // Obradi single-byte ACK/NAK prema trenutnom stanju
-        if (m_session.state == UpdateState::S_WAITING_FOR_START_ACK)
-        {
-            if (single_byte == ACK) {
-                Serial.println(F("[UpdateManager] -> Primljen START ACK (1B). Započinjem slanje podataka..."));
-                m_session.state = UpdateState::S_SENDING_DATA;
-                m_session.retryCount = 0;
-                m_session.currentSequenceNum = 1;
-            } else {
-                Serial.println(F("[UpdateManager] -> Primljen START NAK (1B). Pokrećem ponovni pokušaj..."));
-                OnTimeout();
-            }
-            return;
-        }
-        else if (m_session.state == UpdateState::S_WAITING_FOR_DATA_ACK)
-        {
-            if (single_byte == ACK) {
-                Serial.printf("[UpdateManager] -> Primljen DATA ACK (1B) za paket #%lu.\n", m_session.currentSequenceNum);
-                m_session.retryCount = 0;
-                m_session.bytesSent += m_session.read_chunk_size;
-                
-                if (m_session.bytesSent >= m_session.fw_size) {
-                    if (m_session.type == TYPE_FW_RC) {
-                        Serial.println(F("[UpdateManager] Slanje FW završeno. Prelazim na START_BLDR."));
-                        m_session.state = S_SENDING_RESTART_CMD;
-                    } else {
-                        Serial.println(F("[UpdateManager] -> Slanje slike ZAVRŠENO."));
-                        CleanupSession(false);
-                    }
-                } else {
-                    m_session.currentSequenceNum++;
-                    m_session.state = S_SENDING_DATA;
-                }
-            } else if (single_byte == NAK) {
-                m_session.retryCount++;
-                Serial.printf("[UpdateManager] -> Primljen NAK (1B). Pokušaj %d/%d...\n", m_session.retryCount, MAX_UPDATE_RETRIES);
-                m_session.state = S_SENDING_DATA;
-                m_session.fw_file.seek(m_session.bytesSent);
-            } else {
-                Serial.println(F("[UpdateManager] -> Nepoznat 1B odgovor. Timeout..."));
-                OnTimeout();
-            }
-            return;
-        }
-        else if (m_session.state == UpdateState::S_WAITING_FOR_FINISH_ACK)
-        {
-            if (single_byte == ACK) {
-                Serial.println(F("[UpdateManager] -> Primljen FINISH ACK (1B). Update završen!"));
-                CleanupSession(false);
-            } else {
-                Serial.println(F("[UpdateManager] -> Primljen FINISH NAK (1B). Pokušaj ponovo..."));
-                OnTimeout();
-            }
-            return;
-        }
-        
-        return; // Izlaz za single-byte protokol
-    }
-    
-    // =================================================================================
-    // --- NOVI PROTOKOL: PUNI PAKET SA HEADEROM (10+ bajtova) - TRENUTNO STANJE ---
-    // Ovaj kod radi 100% identično kao prije za VUCKO/ULM/VRATA_BOSNE/DZAFIC
-    // =================================================================================
-    if (length >= 10) { // Minimalna dužina za parsiranje punog paketa
+    if (length >= 10) { // Minimalna dužina za parsiranje
         Serial.printf("  -> Status (ACK/NAK): 0x%02X\n", packet[0]);
         Serial.printf("  -> Ciljna Adresa:   0x%02X%02X\n", packet[1], packet[2]);
         Serial.printf("  -> Izvorna Adresa:  0x%02X%02X\n", packet[3], packet[4]);
@@ -721,17 +533,12 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
     }
 }
 
+
+
 void UpdateManager::OnTimeout()
 {
     m_session.retryCount++;
     Serial.printf("[UpdateManager] Timeout. Pokušaj %d od %d...\n", m_session.retryCount, MAX_UPDATE_RETRIES);
-
-    // =================================================================================
-    // KRITIČNO: RX2TX delay MORA postojati prije ponovnog slanja paketa!
-    // Referentni kod: rx_tmr = Get_SysTick(); rx_tout = RX2TX_DEL; HC_State = PCK_ENUM;
-    // Bez ovog delay-a, kontroler ne stiže da se prebaci u RX mod i NAK se gubi.
-    // =================================================================================
-    vTaskDelay(pdMS_TO_TICKS(RX2TX_DEL_MS));
 
     // Vrati stanje na prethodno da bi se ponovo poslao isti paket
     switch(m_session.state) {
@@ -781,9 +588,7 @@ void UpdateManager::SendFirmwareStartRequest()
         data_len = 3;
         packet[6] = CMD_DWNLD_FWR_IMG; // U starom kodu je ovo bio DWNLD_FWR
         
-        // PROMJENA: Koristi dinamički chunk size za update umjesto hardkodirane konstante
-        uint16_t chunk_size = GetChunkSizeForProtocol(); // 64 (stari) ili 128 (novi)
-        uint16_t total_packets = (s->fw_size + chunk_size - 1) / chunk_size;
+        uint16_t total_packets = (s->fw_size + m_rs485_service->GetChunkSize() - 1) / m_rs485_service->GetChunkSize();
         packet[7] = (total_packets >> 8) & 0xFF;
         packet[8] = total_packets & 0xFF;
     }
@@ -856,9 +661,7 @@ void UpdateManager::SendFileStartRequest()
     
     packet[6] = sub_cmd;
 
-    // PROMJENA: Koristi dinamički chunk size za update umjesto hardkodirane konstante
-    uint16_t chunk_size = GetChunkSizeForProtocol(); // 64 (stari) ili 128 (novi)
-    uint16_t total_packets = (s->fw_size + chunk_size - 1) / chunk_size;
+    uint16_t total_packets = (s->fw_size + m_rs485_service->GetChunkSize() - 1) / m_rs485_service->GetChunkSize();
     packet[7] = (total_packets >> 8) & 0xFF;
     packet[8] = total_packets & 0xFF;
 
@@ -910,9 +713,7 @@ void UpdateManager::SendDataPacket()
 {
     Serial.printf("[UpdateManager] -> Šaljem DATA paket #%lu...\n", m_session.currentSequenceNum);
     UpdateSession* s = &m_session;
-    // PROMJENA: Koristi dinamički chunk size za update umjesto hardkodirane konstante
-    uint16_t chunk_size = GetChunkSizeForProtocol(); // 64 (stari) ili 128 (novi)
-    int16_t bytes_read = s->fw_file.read(s->read_buffer, chunk_size);
+    int16_t bytes_read = s->fw_file.read(s->read_buffer, m_rs485_service->GetChunkSize());
     
     if (bytes_read <= 0)
     {
@@ -1065,12 +866,6 @@ void UpdateManager::SendAppExeCommand()
 
 void UpdateManager::CleanupSession(bool failed /*= false*/)
 {
-    // =================================================================================
-    // KRITIČNO: Deaktiviraj single-byte mod nakon završetka transfera
-    // Ovo vraća Rs485Service u normalno stanje za LogPullManager i ostale funkcije
-    // =================================================================================
-    m_rs485_service->DisableSingleByteMode();
-    
     if (m_session.is_read_active && m_session.fw_file)
     {
         m_session.fw_file.close();

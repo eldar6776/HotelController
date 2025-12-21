@@ -128,6 +128,11 @@ public:
      * @brief NOVO: Provjerava da li je sekvencijalni update aktivan.
      */
     bool IsSequenceActive();
+    
+    /**
+     * @brief NOVO: Zaustavlja sekvencu i ponovo pokreće HTTP server.
+     */
+    void StopSequence();
 
 public:
     // Podržavamo samo jednu sesiju odjednom

@@ -325,6 +325,17 @@ bool UpdateManager::IsSequenceActive()
     return m_sequence.is_active;
 }
 
+void UpdateManager::StopSequence()
+{
+    m_sequence.is_active = false;
+    Serial.println(F("[UpdateManager] Sekvenca zaustavljena."));
+    
+    // POKRENI SERVER nakon što je cijela sekvenca završena!
+    if (m_http_server) {
+        m_http_server->Start();
+    }
+}
+
 void UpdateManager::StartImageUpdateSequence(uint16_t first_addr, uint16_t last_addr, uint8_t first_img, uint8_t last_img)
 {
     if (m_sequence.is_active || m_session.state != S_IDLE) {
@@ -403,7 +414,7 @@ void UpdateManager::Run()
         if (m_sequence.current_addr > m_sequence.last_addr)
         {
             Serial.println("[UpdateManager] KRAJ SEKVENCIJE: Sve adrese su obrađene.");
-            m_sequence.is_active = false;
+            StopSequence();
             m_first_image_in_sequence = true;
             m_session_in_progress = false;
             return;
@@ -1076,8 +1087,11 @@ void UpdateManager::CleanupSession(bool failed /*= false*/)
     // =================================================================================
     m_rs485_service->DisableSingleByteMode();
     
-    // POKRENI SERVER!
-    if (m_http_server) m_http_server->Start();
+    // POKRENI SERVER - ALI SAMO AKO NEMA AKTIVNE SEKVENCE!
+    // Ako je sekvenca aktivna, server ostaje zaustavljen do kraja cijele sekvence
+    if (m_http_server && !m_sequence.is_active) {
+        m_http_server->Start();
+    }
     
     if (m_session.is_read_active && m_session.fw_file)
     {
@@ -1093,7 +1107,7 @@ void UpdateManager::CleanupSession(bool failed /*= false*/)
     if (m_sequence.is_active) {
         if (failed) {
             Serial.printf("[UpdateManager] Sesija NEUSPJEŠNA za Adresu %d, Slika %d.\n", m_sequence.current_addr, m_sequence.current_img);
-            m_sequence.is_active = false; // Prekini sekvencu
+            StopSequence(); // Prekini sekvencu I pokreni server
             m_first_image_in_sequence = true;
         } else {
             Serial.printf("[UpdateManager] Sesija USPJEŠNA za Adresu %d, Slika %d.\n", m_sequence.current_addr, m_sequence.current_img);

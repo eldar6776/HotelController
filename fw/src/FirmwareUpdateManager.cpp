@@ -82,6 +82,18 @@ bool FirmwareUpdateManager::IsActive()
     return m_sequence.is_active;
 }
 
+void FirmwareUpdateManager::StopSequence()
+{
+    m_sequence.is_active = false;
+    m_sequence.current_addr = 0;
+    Serial.println(F("[FufManager] Sekvenca zaustavljena."));
+    
+    // POKRENI SERVER nakon što je cijela sekvenca završena!
+    if (m_http_server) {
+        m_http_server->Start();
+    }
+}
+
 void FirmwareUpdateManager::StartFirmwareUpdateSequence(uint16_t first_addr, uint16_t last_addr, FufUpdateType type)
 {
     if (m_sequence.is_active) {
@@ -148,7 +160,7 @@ void FirmwareUpdateManager::Run()
     {
         if (m_sequence.current_addr > m_sequence.last_addr) {
             Serial.println("[FufManager] KRAJ SEKVENCIJE: Sve adrese su obrađene.");
-            m_sequence.is_active = false;
+            StopSequence();
             return;
         }
 
@@ -161,7 +173,8 @@ void FirmwareUpdateManager::Run()
         Serial.printf("[FufManager] Pokretanje dijela sekvence: Adresa %d\n", m_sequence.current_addr);
         if (!StartSession(m_sequence.current_addr, m_sequence.type)) {
              Serial.printf("[FufManager] Greška pri pokretanju sesije za adresu %d. Prekidam sekvencu.\n", m_sequence.current_addr);
-             m_sequence.is_active = false;
+             StopSequence();
+             return;
         }
         m_sequence.current_addr++;
     }
@@ -439,7 +452,10 @@ void FirmwareUpdateManager::SendAppExeCommand()
 
 void FirmwareUpdateManager::CleanupSession(bool failed)
 {
-    if (m_http_server) m_http_server->Start();
+    // POKRENI SERVER - ALI SAMO AKO NEMA AKTIVNE SEKVENCE!
+    if (m_http_server && !m_sequence.is_active) {
+        m_http_server->Start();
+    }
     
     if (m_session.file_handle) {
         m_session.file_handle.close();
@@ -448,11 +464,19 @@ void FirmwareUpdateManager::CleanupSession(bool failed)
     extern TimeSync g_timeSync;
     g_timeSync.ResetTimer();
 
-    if (failed) {
-        Serial.printf("[FufManager] Sesija NEUSPJEŠNA za Adresu %d.\n", m_session.clientAddress);
-        m_sequence.is_active = false; // Prekini celu sekvencu ako jedna adresa ne uspe
+    if (m_sequence.is_active) {
+        if (failed) {
+            Serial.printf("[FufManager] Sesija NEUSPJEŠNA za Adresu %d.\n", m_session.clientAddress);
+            StopSequence(); // Prekini celu sekvencu ako jedna adresa ne uspe
+        } else {
+            Serial.printf("[FufManager] Sesija USPJEŠNA za Adresu %d.\n", m_session.clientAddress);
+        }
     } else {
-        Serial.printf("[FufManager] Sesija USPJEŠNA za Adresu %d.\n", m_session.clientAddress);
+        if (failed) {
+            Serial.printf("[FufManager] Sesija (pojedinačna) NEUSPJEŠNA za Adresu %d.\n", m_session.clientAddress);
+        } else {
+            Serial.printf("[FufManager] Sesija (pojedinačna) USPJEŠNA za Adresu %d.\n", m_session.clientAddress);
+        }
     }
 
     m_session.state = FUF_S_IDLE;

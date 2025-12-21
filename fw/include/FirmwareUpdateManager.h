@@ -77,6 +77,7 @@ class FirmwareUpdateManager
 public:
     FirmwareUpdateManager();
     void Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCardManager);
+    void SetHttpServer(class HttpServer* pHttpServer) { m_http_server = pHttpServer; }
     
     void StartFirmwareUpdateSequence(uint16_t first_addr, uint16_t last_addr, FufUpdateType type);
     void Run();
@@ -97,6 +98,7 @@ private:
     FufUpdateSession m_session;
     Rs485Service* m_rs485_service;
     SdCardManager* m_sd_card_manager;
+    class HttpServer* m_http_server;
 };
 
 #endif // FIRMWARE_UPDATE_MANAGER_H

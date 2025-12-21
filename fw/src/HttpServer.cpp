@@ -177,6 +177,12 @@ void HttpServer::Start()
     Serial.println(F("[HttpServer] Server pokrenut."));
 }
 
+void HttpServer::Stop()
+{
+    m_server.end();
+    Serial.println(F("[HttpServer] *** SERVER ZAUSTAVLJEN ***"));
+}
+
 /**
  * @brief Servira glavnu HTML stranicu iz PROGMEM.
  */

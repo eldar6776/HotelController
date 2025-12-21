@@ -99,6 +99,9 @@ void setup()
         &g_eepromStorage,
         &g_sdCardManager
     );
+    
+    g_updateManager.SetHttpServer(&g_httpServer);
+    g_fufUpdateManager.SetHttpServer(&g_httpServer);
 
     // Pokrećemo mrežni zadatak
     g_networkManager.StartTask();

@@ -46,6 +46,7 @@ public:
         SdCardManager* pSdCardManager  // CHANGED
     );
     void Start(); // Metoda za pokretanje servera
+    void Stop();  // Metoda za potpuno zaustavljanje servera
 
 private:
     void HandleRoot(AsyncWebServerRequest *request); // Servira frontend

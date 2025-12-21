@@ -68,6 +68,7 @@ FirmwareUpdateManager::FirmwareUpdateManager()
     m_sequence.is_active = false;
     m_rs485_service = NULL;
     m_sd_card_manager = NULL;
+    m_http_server = NULL;
 }
 
 void FirmwareUpdateManager::Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCardManager)
@@ -102,6 +103,8 @@ bool FirmwareUpdateManager::StartSession(uint16_t clientAddress, FufUpdateType t
         return false;
     }
 
+    if (m_http_server) m_http_server->Stop();
+
     m_session.clientAddress = clientAddress;
     m_session.bytesSent = 0;
     m_session.currentSequenceNum = 0;
@@ -115,12 +118,14 @@ bool FirmwareUpdateManager::StartSession(uint16_t clientAddress, FufUpdateType t
 
     if (!m_sd_card_manager->FileExists(m_session.filename.c_str())) {
         Serial.printf("[FufManager] GREŠKA: Fajl '%s' ne postoji!\n", m_session.filename.c_str());
+        if (m_http_server) m_http_server->Start();
         return false;
     }
 
     m_session.file_handle = m_sd_card_manager->OpenFile(m_session.filename.c_str(), FILE_READ);
     if (!m_session.file_handle) {
         Serial.printf("[FufManager] GREŠKA: Ne mogu otvoriti fajl '%s'\n", m_session.filename.c_str());
+        if (m_http_server) m_http_server->Start();
         return false;
     }
 
@@ -434,6 +439,8 @@ void FirmwareUpdateManager::SendAppExeCommand()
 
 void FirmwareUpdateManager::CleanupSession(bool failed)
 {
+    if (m_http_server) m_http_server->Start();
+    
     if (m_session.file_handle) {
         m_session.file_handle.close();
     }

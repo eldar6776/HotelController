@@ -103,6 +103,7 @@ class UpdateManager
 public:
     UpdateManager();
     void Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCardManager);
+    void SetHttpServer(class HttpServer* pHttpServer) { m_http_server = pHttpServer; }
 
     /**
      * @brief Poziva HttpServer da započne novu sesiju, koristi Update CMD kod.
@@ -182,6 +183,7 @@ private:
 
     Rs485Service* m_rs485_service;
     SdCardManager* m_sd_card_manager;
+    class HttpServer* m_http_server;
     uint8_t m_last_sent_sub_cmd; // NOVO: Čuva zadnju poslanu sub-komandu (npr. 0x64)
     
     // Zastavice za sekvencijalnu logiku

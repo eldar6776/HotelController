@@ -62,6 +62,7 @@ UpdateManager::UpdateManager()
     m_sequence.is_active = false; // NOVO
     m_rs485_service = NULL;
     m_sd_card_manager = NULL;
+    m_http_server = NULL;
     m_session.is_read_active = false;
     
     // Inicijalizuj zastavice za sekvencu
@@ -348,6 +349,9 @@ bool UpdateManager::StartSession(uint8_t clientAddress, uint8_t updateCmd)
         return false;
     }
 
+    // ZAUSTAVI SERVER!
+    if (m_http_server) m_http_server->Stop();
+
     m_session.clientAddress = clientAddress;
     m_session.bytesSent = 0;
     m_session.currentSequenceNum = 0;
@@ -355,6 +359,7 @@ bool UpdateManager::StartSession(uint8_t clientAddress, uint8_t updateCmd)
 
     if (!PrepareSession(&m_session, updateCmd))
     {
+        if (m_http_server) m_http_server->Start();
         return false;
     }
 
@@ -1070,6 +1075,9 @@ void UpdateManager::CleanupSession(bool failed /*= false*/)
     // Ovo vraća Rs485Service u normalno stanje za LogPullManager i ostale funkcije
     // =================================================================================
     m_rs485_service->DisableSingleByteMode();
+    
+    // POKRENI SERVER!
+    if (m_http_server) m_http_server->Start();
     
     if (m_session.is_read_active && m_session.fw_file)
     {

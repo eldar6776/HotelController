@@ -155,9 +155,4 @@ void loop()
         g_timeSync.Run();
         g_logPullManager.Run();
     }
-
-    // Mala pauza da se spriječi 100% zauzeće CPU-a i da se omogući rad
-    // drugim zadacima (npr. mrežni stek, HttpServer).
-    // Ovo je ključno jer su Run() funkcije sada blokirajuće.
-    vTaskDelay(pdMS_TO_TICKS(5));
 }

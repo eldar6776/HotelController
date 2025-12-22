@@ -188,7 +188,26 @@ void HttpServer::Stop()
  */
 void HttpServer::HandleRoot(AsyncWebServerRequest *request)
 {
-    request->send_P(200, "text/html", INDEX_HTML);
+    request->send_P(200, "text/html", INDEX_HTML, [](const String& var) -> String {
+        if(var == "IP0") return String((g_appConfig.ip_address >> 24) & 0xFF);
+        if(var == "IP1") return String((g_appConfig.ip_address >> 16) & 0xFF);
+        if(var == "IP2") return String((g_appConfig.ip_address >> 8) & 0xFF);
+        if(var == "IP3") return String(g_appConfig.ip_address & 0xFF);
+        
+        if(var == "NM0") return String((g_appConfig.subnet_mask >> 24) & 0xFF);
+        if(var == "NM1") return String((g_appConfig.subnet_mask >> 16) & 0xFF);
+        if(var == "NM2") return String((g_appConfig.subnet_mask >> 8) & 0xFF);
+        if(var == "NM3") return String(g_appConfig.subnet_mask & 0xFF);
+        
+        if(var == "GW0") return String((g_appConfig.gateway >> 24) & 0xFF);
+        if(var == "GW1") return String((g_appConfig.gateway >> 16) & 0xFF);
+        if(var == "GW2") return String((g_appConfig.gateway >> 8) & 0xFF);
+        if(var == "GW3") return String(g_appConfig.gateway & 0xFF);
+        
+        if(var == "SYSID") return String(g_appConfig.system_id);
+
+        return String();
+    });
 }
 
 /**

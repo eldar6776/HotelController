@@ -64,7 +64,11 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <option value="8">460800 bps</option>
         <option value="9">921600 bps</option>
     </select>
+    &nbsp;
     <input id="kont106" value="Promjena adresa" type="button" onclick="send_event(106)">
+    <hr>
+    Sistem ID ciljanog kontrolera: <input id="kont107" value="%SYSID%" type="number" min="1" max="65000">
+    <input value="Promjeni Sistem ID" type="button" onclick="send_event(107)">
     <hr>
     
     <!-- NEW: Protocol Selection -->
@@ -144,16 +148,16 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     Zadnja slika: <input id="kont502" onchange="" value="1" type="number" min="1" max="21">&nbsp; &nbsp; &nbsp;
     <input value="Update slika" type="button" onclick="send_event(503)">
     <hr>
-    IP adresa............<input id="kont550" value="192" type="number" min="0" max="255"> <input id="kont551" value="168" type="number" min="0" max="255"> <input id="kont552" value="20" type="number" min="0" max="255"> <input id="kont553" value="199" type="number" min="0" max="255">
+    IP adresa............<input id="kont550" value="%IP0%" type="number" min="0" max="255"> <input id="kont551" value="%IP1%" type="number" min="0" max="255"> <input id="kont552" value="%IP2%" type="number" min="0" max="255"> <input id="kont553" value="%IP3%" type="number" min="0" max="255">
     <hr>
-    Subnet Mask......<input id="kont560" value="255" type="number" min="0" max="255"> <input id="kont561" value="255" type="number" min="0" max="255"> <input id="kont562" value="255" type="number" min="0" max="255"> <input id="kont563" value="0" type="number" min="0" max="255">
+    Subnet Mask......<input id="kont560" value="%NM0%" type="number" min="0" max="255"> <input id="kont561" value="%NM1%" type="number" min="0" max="255"> <input id="kont562" value="%NM2%" type="number" min="0" max="255"> <input id="kont563" value="%NM3%" type="number" min="0" max="255">
     <hr>
-    Default Gateway.<input id="kont570" value="192" type="number" min="0" max="255"> <input id="kont571" value="168" type="number" min="0" max="255"> <input id="kont572" value="20" type="number" min="0" max="255"> <input id="kont573" value="1" type="number" min="0" max="255">
+    Default Gateway.<input id="kont570" value="%GW0%" type="number" min="0" max="255"> <input id="kont571" value="%GW1%" type="number" min="0" max="255"> <input id="kont572" value="%GW2%" type="number" min="0" max="255"> <input id="kont573" value="%GW3%" type="number" min="0" max="255">
     <br>
     <br>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;  &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
     <input value="Promjena IP adresa" type="button" onclick="send_event(575)">
     <hr>
-    Sistem ID:..........<input id="kont580" value="43981" type="number" min="1" max="65000">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
+    Sistem ID:..........<input id="kont580" value="%SYSID%" type="number" min="1" max="65000">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
     <input value="Promjena ID sistema" type="button" onclick="send_event(581)">
     <hr>
     
@@ -535,6 +539,9 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 "&rga=" + document.getElementById("kont103").value + "&rba=" + document.getElementById("kont104").value +
                 "&rib=" + document.getElementById("kont105").value;
         }
+        else if (t == "107") {
+            htt = "sysctrl.cgi?sid=" + document.getElementById("kont101").value + "&nid=" + document.getElementById("kont107").value;
+        }
         else if (t == "111") { // Snimanje glavnog protokola
             htt = "sysctrl.cgi?set_proto=" + document.getElementById("kont110").value;
         }
@@ -595,7 +602,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             htt = "sysctrl.cgi?ipa=" + ipp + "&snm=" + smm + "&gwa=" + dgg;
         }
         else if (t == "581") {
-            htt = "sysctrl.cgi?sid=" + document.getElementById("kont101").value + "&nid=" + document.getElementById("kont580").value;
+            htt = "sysctrl.cgi?sid=HCifa&nid=" + document.getElementById("kont580").value;
         }
         else if (t == "600") { // Snimanje dodatnih sync paketa
             htt = "sysctrl.cgi?set_add_sync=1";

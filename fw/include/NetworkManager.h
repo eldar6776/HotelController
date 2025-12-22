@@ -25,11 +25,36 @@ class HttpServer;
 class NetworkManager
 {
 public:
+    /**
+     * @brief Konstruktor.
+     */
     NetworkManager();
+
+    /**
+     * @brief Inicijalizuje event handlere i pinove.
+     */
     void Initialize();
+
+    /**
+     * @brief Pokreće FreeRTOS zadatak za mrežnu inicijalizaciju.
+     */
     void StartTask(); // NOVO: Metoda za pokretanje zadatka
+
+    /**
+     * @brief Glavna petlja (legacy/unused).
+     */
     void Loop();
+
+    /**
+     * @brief Provjerava da li postoji mrežna konekcija (ETH ili WiFi).
+     * @return true ako je konektovan.
+     */
     bool IsNetworkConnected();
+
+    /**
+     * @brief Provjerava da li je inicijalizacija mreže završena.
+     * @return true ako je završena.
+     */
     bool IsInitializationComplete(); // NOVO: Getter za provjeru
 
 private:

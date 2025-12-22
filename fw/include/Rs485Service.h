@@ -26,9 +26,31 @@ enum class Rs485State
 class Rs485Service
 {
 public:
+    /**
+     * @brief Konstruktor.
+     */
     Rs485Service();
+
+    /**
+     * @brief Inicijalizuje UART interfejs i GPIO pinove.
+     */
     void Initialize();
+
+    /**
+     * @brief Šalje paket podataka preko RS485.
+     * @param data Pointer na podatke.
+     * @param length Dužina podataka.
+     * @return true ako je slanje uspješno.
+     */
     bool SendPacket(const uint8_t* data, uint16_t length);
+
+    /**
+     * @brief Čeka i prima paket sa RS485 magistrale.
+     * @param buffer Buffer za smještanje primljenih podataka.
+     * @param buffer_size Veličina buffera.
+     * @param timeout_ms Timeout u milisekundama.
+     * @return Broj primljenih bajtova ili 0/negativno u slučaju greške/timeouta.
+     */
     int ReceivePacket(uint8_t* buffer, uint16_t buffer_size, uint32_t timeout_ms);
 
     /**

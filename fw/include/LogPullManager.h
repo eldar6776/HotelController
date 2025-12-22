@@ -19,8 +19,21 @@
 class LogPullManager
 {
 public:
+    /**
+     * @brief Konstruktor.
+     */
     LogPullManager();
+
+    /**
+     * @brief Inicijalizuje menadžera.
+     * @param pRs485Service Pointer na RS485 servis.
+     * @param pEepromStorage Pointer na EEPROM storage.
+     */
     void Initialize(Rs485Service* pRs485Service, EepromStorage* pEepromStorage);
+
+    /**
+     * @brief Izvršava ciklus prikupljanja logova (polling).
+     */
     void Run();
 
 private:

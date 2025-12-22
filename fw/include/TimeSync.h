@@ -20,10 +20,31 @@
 class TimeSync
 {
 public:
+    /**
+     * @brief Konstruktor.
+     */
     TimeSync();
+
+    /**
+     * @brief Inicijalizuje TimeSync modul.
+     * @param pRs485Service Pointer na RS485 servis.
+     */
     void Initialize(Rs485Service* pRs485Service);
+
+    /**
+     * @brief Provjerava i šalje broadcast vremena ako je potrebno.
+     */
     void Run();
+
+    /**
+     * @brief Provjerava da li je vrijeme za sinhronizaciju.
+     * @return true ako je interval istekao.
+     */
     bool IsTimeToSync();
+
+    /**
+     * @brief Resetuje tajmer za sinhronizaciju.
+     */
     void ResetTimer();
 
 private:

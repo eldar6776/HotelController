@@ -42,6 +42,14 @@ private:
     void SendDeleteLogRequest(uint16_t address);
     void SendLogRequest(uint16_t address);
     uint16_t GetNextAddress();
+    
+    // HILLS Protocol helpers
+    bool IsHillsProtocol();
+    uint8_t GetStatusCommand();
+    uint8_t GetLogCommand();
+    uint8_t GetDeleteCommand();
+    uint32_t GetResponseTimeout();
+    uint32_t GetRxTxDelay();
 
     Rs485Service* m_rs485_service;
     EepromStorage* m_eeprom_storage;
@@ -51,7 +59,8 @@ private:
         IDLE,
         SENDING_STATUS_REQUEST,
         SENDING_LOG_REQUEST,
-        WAITING_FOR_RESPONSE
+        WAITING_FOR_RESPONSE,
+        WAITING_FOR_DELETE_CONFIRMATION  // HILLS: wait for DELETE ACK
     };
 
     PullState m_state;
@@ -60,7 +69,8 @@ private:
     uint16_t m_address_list[MAX_ADDRESS_LIST_SIZE];
     uint16_t m_address_list_count;
     uint8_t m_retry_count;
-    unsigned long m_last_activity_time; // Za implementaciju RX2TX_DEL
+    uint8_t m_hills_query_attempts;  // HILLS ping-pong counter
+    unsigned long m_last_activity_time;
 };
 
 #endif // LOG_PULL_MANAGER_H

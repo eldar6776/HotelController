@@ -117,10 +117,20 @@ enum class ProtocolVersion
 #define SET_RTC_DATE_TIME           0xD5
 #define RTC_PACKET_LENGTH           17
 
-// --- LogPull Komande ---
+// --- LogPull Komande (Standardni Protokoli) ---
 #define GET_SYS_STAT                0xA0
 #define DEL_LOG_LIST                0xD3
 #define GET_LOG_LIST                0xA3
+
+// --- LogPull Komande (HILLS Protokol) ---
+#define HILLS_GET_SYS_STATUS        0xBA
+#define HILLS_GET_LOG_LIST          0xB4
+#define HILLS_DELETE_LOG_LIST       0xB3
+
+// --- HILLS Protokol Tajminzi ---
+#define HILLS_RESPONSE_TIMEOUT_MS   25
+#define HILLS_RX_TO_TX_DELAY_MS     10
+#define HILLS_MAX_QUERY_ATTEMPTS    5
 
 //=============================================================================
 // 5. GLOBALNE KONSTANTE SISTEMA

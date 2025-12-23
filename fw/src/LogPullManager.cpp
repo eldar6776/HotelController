@@ -22,6 +22,7 @@ LogPullManager::LogPullManager() :
     m_current_pull_address(0),
     m_address_list_count(0),
     m_retry_count(0),
+    m_hills_query_attempts(0),
     m_last_activity_time(0)
 {
     // Konstruktor
@@ -49,6 +50,54 @@ void LogPullManager::Initialize(Rs485Service* pRs485Service, EepromStorage* pEep
 }
 
 /**
+ * @brief Provjerava da li je HILLS protokol aktivan.
+ */
+bool LogPullManager::IsHillsProtocol()
+{
+    return (static_cast<ProtocolVersion>(g_appConfig.protocol_version) == ProtocolVersion::HILLS);
+}
+
+/**
+ * @brief Vraća protokol-specifičnu komandu za status request.
+ */
+uint8_t LogPullManager::GetStatusCommand()
+{
+    return IsHillsProtocol() ? HILLS_GET_SYS_STATUS : GET_SYS_STAT;
+}
+
+/**
+ * @brief Vraća protokol-specifičnu komandu za log request.
+ */
+uint8_t LogPullManager::GetLogCommand()
+{
+    return IsHillsProtocol() ? HILLS_GET_LOG_LIST : GET_LOG_LIST;
+}
+
+/**
+ * @brief Vraća protokol-specifičnu komandu za delete request.
+ */
+uint8_t LogPullManager::GetDeleteCommand()
+{
+    return IsHillsProtocol() ? HILLS_DELETE_LOG_LIST : DEL_LOG_LIST;
+}
+
+/**
+ * @brief Vraća protokol-specifičan response timeout.
+ */
+uint32_t LogPullManager::GetResponseTimeout()
+{
+    return IsHillsProtocol() ? HILLS_RESPONSE_TIMEOUT_MS : RS485_RESP_TOUT_MS;
+}
+
+/**
+ * @brief Vraća protokol-specifičan RX-TX delay.
+ */
+uint32_t LogPullManager::GetRxTxDelay()
+{
+    return IsHillsProtocol() ? HILLS_RX_TO_TX_DELAY_MS : RX2TX_DEL_MS;
+}
+
+/**
  * @brief Glavna funkcija koju poziva state-mašina. Obavlja jedan puni ciklus pollinga.
  */
 void LogPullManager::Run()
@@ -63,28 +112,53 @@ void LogPullManager::Run()
     // ========================================================================
     
     // ========================================================================
-    // --- IMPLEMENTACIJA OBAVEZNE RX->TX PAUZE (3ms) ---
+    // --- IMPLEMENTACIJA OBAVEZNE RX->TX PAUZE (protokol-specifična) ---
     // ========================================================================
-    if (millis() - m_last_activity_time < RX2TX_DEL_MS)
+    uint32_t rx_tx_delay = GetRxTxDelay();
+    if (millis() - m_last_activity_time < rx_tx_delay)
     {
-        return; // Još nije prošlo 3ms, ne radi ništa, izađi odmah.
+        return; // Još nije prošla potrebna pauza
     }
     // ========================================================================
 
     // KORAK 2: Ako čekamo odgovor, provjeri da li je stigao.
-    if (m_state == PullState::WAITING_FOR_RESPONSE)
+    if (m_state == PullState::WAITING_FOR_RESPONSE || m_state == PullState::WAITING_FOR_DELETE_CONFIRMATION)
     {
         uint8_t response_buffer[MAX_PACKET_LENGTH];
-        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, RS485_RESP_TOUT_MS);
+        uint32_t timeout = GetResponseTimeout();
+        int response_len = m_rs485_service->ReceivePacket(response_buffer, MAX_PACKET_LENGTH, timeout);
 
         if (response_len > 0) {
             // Imamo odgovor, obradi ga i promijeni stanje.
             ProcessResponse(response_buffer, response_len);
         } else {
-            // Timeout. Vrati se u IDLE stanje i pripremi za sljedeću adresu.
-            LOG_DEBUG(4, "[LogPull] Timeout za adresu 0x%X. Prelazim na sljedeću.\n", m_current_pull_address);
-            m_state = PullState::IDLE; // Vrati se u IDLE
-            m_last_activity_time = millis(); // Zabilježi vrijeme neuspjeha
+            // Timeout
+            if (IsHillsProtocol() && m_state == PullState::WAITING_FOR_DELETE_CONFIRMATION)
+            {
+                // HILLS: Timeout na DELETE confirmation
+                m_hills_query_attempts++;
+                LOG_DEBUG(3, "[LogPull-HILLS] Timeout na DELETE (attempt %d/%d)\n", 
+                    m_hills_query_attempts, HILLS_MAX_QUERY_ATTEMPTS);
+                
+                if (m_hills_query_attempts >= HILLS_MAX_QUERY_ATTEMPTS)
+                {
+                    LOG_DEBUG(3, "[LogPull-HILLS] Max attempts dostignut za 0x%X\n", m_current_pull_address);
+                    m_state = PullState::IDLE;
+                    m_hills_query_attempts = 0;
+                }
+                else
+                {
+                    // Pokušaj ponovo GET_LOG_LIST
+                    m_state = PullState::SENDING_LOG_REQUEST;
+                }
+            }
+            else
+            {
+                LOG_DEBUG(4, "[LogPull] Timeout za 0x%X. Sljedeća adresa.\n", m_current_pull_address);
+                m_state = PullState::IDLE;
+                m_hills_query_attempts = 0;
+            }
+            m_last_activity_time = millis();
         }
         return;
     }
@@ -98,7 +172,8 @@ void LogPullManager::Run()
         }
         
         m_current_pull_address = GetNextAddress();
-        m_retry_count = 0; 
+        m_retry_count = 0;
+        m_hills_query_attempts = 0; // Reset counter za novu adresu
         m_state = PullState::SENDING_STATUS_REQUEST; // Pripremi se za slanje statusnog upita.
     }
 
@@ -146,11 +221,11 @@ uint16_t LogPullManager::GetNextAddress()
  */
 void LogPullManager::SendStatusRequest(uint16_t address)
 {
-    LOG_DEBUG(4, "[LogPull] -> Šaljem GET_SYS_STAT na adresu 0x%X\n", address);
+    uint8_t cmd = GetStatusCommand();
+    LOG_DEBUG(4, "[LogPull] -> Šaljem STATUS(0x%02X) na 0x%X\n", cmd, address);
     
     uint8_t packet[10]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
-    uint8_t cmd = GET_SYS_STAT;
     uint8_t data_len = 1;
 
     packet[0] = SOH;
@@ -161,9 +236,7 @@ void LogPullManager::SendStatusRequest(uint16_t address)
     packet[5] = data_len; 
     packet[6] = cmd;
     
-    // Checksum (samo na cmd bajtu)
-    uint16_t checksum = cmd; 
-
+    uint16_t checksum = cmd;
     packet[7] = (checksum >> 8);
     packet[8] = (checksum & 0xFF);
     packet[9] = EOT;
@@ -179,18 +252,18 @@ void LogPullManager::SendStatusRequest(uint16_t address)
  */
 void LogPullManager::SendDeleteLogRequest(uint16_t address)
 {
-    LOG_DEBUG(4, "[LogPull] -> Šaljem DEL_LOG_LIST na adresu 0x%X\n", address);
+    uint8_t cmd = GetDeleteCommand();
+    LOG_DEBUG(4, "[LogPull] -> Šaljem DELETE(0x%02X) na 0x%X\n", cmd, address);
     
     uint8_t packet[10]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
-    uint8_t cmd = DEL_LOG_LIST;
     
     packet[0] = SOH;
     packet[1] = (address >> 8);
     packet[2] = (address & 0xFF);
     packet[3] = (rsifa >> 8);
     packet[4] = (rsifa & 0xFF);
-    packet[5] = 1; // Data Length
+    packet[5] = 1;
     packet[6] = cmd;
     
     uint16_t checksum = cmd;
@@ -198,8 +271,16 @@ void LogPullManager::SendDeleteLogRequest(uint16_t address)
     packet[8] = (checksum & 0xFF);
     packet[9] = EOT;
     
-    m_rs485_service->SendPacket(packet, 10);
-    // Ne čekamo odgovor na komandu za brisanje, samo je pošaljemo.
+    if (m_rs485_service->SendPacket(packet, 10))
+    {
+        if (IsHillsProtocol())
+        {
+            // HILLS: Čekamo ACK na DELETE
+            m_state = PullState::WAITING_FOR_DELETE_CONFIRMATION;
+            LOG_DEBUG(4, "[LogPull-HILLS] Čekam DELETE ACK...\n");
+        }
+        // Standardni: Fire-and-forget
+    }
 }
 
 /**
@@ -207,11 +288,11 @@ void LogPullManager::SendDeleteLogRequest(uint16_t address)
  */
 void LogPullManager::SendLogRequest(uint16_t address)
 {
-    LOG_DEBUG(4, "[LogPull] -> Uređaj ima log. Šaljem GET_LOG_LIST na adresu 0x%X\n", address);
+    uint8_t cmd = GetLogCommand();
+    LOG_DEBUG(4, "[LogPull] -> Šaljem GET_LOG(0x%02X) na 0x%X\n", cmd, address);
 
     uint8_t packet[10]; 
     uint16_t rsifa = g_appConfig.rs485_iface_addr;
-    uint8_t cmd = GET_LOG_LIST;
     uint8_t data_len = 1;
     
     packet[0] = SOH;
@@ -222,9 +303,7 @@ void LogPullManager::SendLogRequest(uint16_t address)
     packet[5] = data_len;
     packet[6] = cmd;
     
-    // Checksum (samo na cmd bajtu)
     uint16_t checksum = cmd;
-
     packet[7] = (checksum >> 8);
     packet[8] = (checksum & 0xFF);
     packet[9] = EOT;
@@ -267,31 +346,46 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
     }
     LOG_DEBUG(3, "[LogPull] -> Odgovor od 0x%X: [ %s]\n", sender_addr, payload_str);
     
-    // Obrada odgovora na GET_SYS_STAT (0xA0)
-    if (response_cmd == GET_SYS_STAT)
+    // ========================================================================
+    // Obrada STATUS odgovora (0xA0 ili 0xBA)
+    // ========================================================================
+    uint8_t expected_status_cmd = GetStatusCommand();
+    if (response_cmd == expected_status_cmd)
     {
-        // Provjera "Log Pending" flaga (prema izvještaju, bajtovi 7 i 8).
+        // Provjera "Log Pending" flaga
         if (packet[7] == '1' || (length > 8 && packet[8] == '1'))
         {
-            LOG_DEBUG(3, "[LogPull] Uređaj 0x%X ima log. Pripremam zahtjev...\n", m_current_pull_address);
-            m_state = PullState::SENDING_LOG_REQUEST; // Postavi stanje za slanje zahtjeva za logom u sljedećem ciklusu.
-            return; // Izađi i čekaj sljedeći `Run()` poziv (nakon RX2TX_DEL pauze).
+            LOG_DEBUG(3, "[LogPull] 0x%X ima log(ove)\n", m_current_pull_address);
+            m_state = PullState::SENDING_LOG_REQUEST;
+            return;
         }
         else {
-             LOG_DEBUG(4, "[LogPull] Uređaj 0x%X nema logova.\n", m_current_pull_address);
+             LOG_DEBUG(4, "[LogPull] 0x%X nema logova\n", m_current_pull_address);
         }
     }
-    // Obrada odgovora na GET_LOG_LIST (0xA3)
-    else if (response_cmd == GET_LOG_LIST)
+    // ========================================================================
+    // Obrada GET_LOG odgovora (0xA3 ili 0xB4)
+    // ========================================================================
+    uint8_t expected_log_cmd = GetLogCommand();
+    if (response_cmd == expected_log_cmd)
     {
         uint16_t data_len = packet[5];
-        // Provjera da li paket sadrži kompletan log od 16 bajtova.
-        // Format odgovora je [CMD] [LOG_ID] [LOG_DATA...], ukupno 18 bajtova (2+16)
+        
+        // HILLS: Provjera za "prazna lista" (data_len == 1)
+        if (IsHillsProtocol() && data_len == 1)
+        {
+            LOG_DEBUG(3, "[LogPull-HILLS] Prazna lista na 0x%X. Sljedeća adresa.\n", m_current_pull_address);
+            m_state = PullState::IDLE;
+            m_hills_query_attempts = 0;
+            m_last_activity_time = millis();
+            return;
+        }
+        
+        // Log paket (18 bajtova: CMD + 16B log + checksum)
         if (data_len >= (LOG_RECORD_SIZE + 2)) 
         {
-            LOG_DEBUG(3, "[LogPull] Primljen LOG sa adrese 0x%X\n", m_current_pull_address);
+            LOG_DEBUG(3, "[LogPull] Primljen LOG sa 0x%X\n", m_current_pull_address);
             LogEntry newLog; 
-            // Kopiramo kompletan 16-bajtni log zapis koji počinje od 7. bajta paketa.
             memcpy((uint8_t*)&newLog, &packet[7], LOG_RECORD_SIZE);
             
             // ========================================================================
@@ -320,16 +414,56 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
 
             if (m_eeprom_storage->WriteLog(&newLog) == LoggerStatus::LOGGER_OK)
             {
-                LOG_DEBUG(3, "[LogPull] -> Upisan log ID: %u sa kontrolera 0x%X\n", newLog.log_id, m_current_pull_address);
+                LOG_DEBUG(3, "[LogPull] -> Log upisan (ID:%u, addr:0x%X)\n", 
+                    newLog.log_id, m_current_pull_address);
                 SendDeleteLogRequest(m_current_pull_address);
+                
+                // HILLS vs Standardni
+                if (IsHillsProtocol())
+                {
+                    // HILLS: State već postavljen u SendDeleteLogRequest()
+                    // Čekamo DELETE ACK pa nastavljamo ping-pong
+                    LOG_DEBUG(4, "[LogPull-HILLS] Ping-pong: čekam DELETE ACK\n");
+                }
+                else
+                {
+                    // Standardni: Vrati se na status check
+                    m_state = PullState::SENDING_STATUS_REQUEST;
+                }
             }
+            return;
+        }
+    }
+    // ========================================================================
+    // HILLS: Obrada DELETE ACK
+    // ========================================================================
+    uint8_t expected_delete_cmd = GetDeleteCommand();
+    if (IsHillsProtocol() && m_state == PullState::WAITING_FOR_DELETE_CONFIRMATION)
+    {
+        // Provjeri ACK i komandu
+        if (packet[0] == ACK && response_cmd == expected_delete_cmd)
+        {
+            LOG_DEBUG(3, "[LogPull-HILLS] DELETE ACK primljen. Nastavljam ping-pong.\n");
+            m_hills_query_attempts++;
             
-            m_state = PullState::SENDING_STATUS_REQUEST; // Vrati se na provjeru statusa za ISTI uređaj
+            if (m_hills_query_attempts >= HILLS_MAX_QUERY_ATTEMPTS)
+            {
+                LOG_DEBUG(3, "[LogPull-HILLS] Max ping-pong ciklusa za 0x%X\n", m_current_pull_address);
+                m_state = PullState::IDLE;
+                m_hills_query_attempts = 0;
+            }
+            else
+            {
+                // Nastavi ping-pong: šalji novi GET_LOG_LIST
+                m_state = PullState::SENDING_LOG_REQUEST;
+            }
+            m_last_activity_time = millis();
             return;
         }
     }
 
-    // Nakon obrade (ili ako nije bilo loga), vrati se u IDLE stanje i zabilježi vrijeme.
+    // Default: Vrati se u IDLE
     m_state = PullState::IDLE;
+    m_hills_query_attempts = 0;
     m_last_activity_time = millis();
 }

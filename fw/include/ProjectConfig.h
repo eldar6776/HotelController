@@ -125,6 +125,9 @@ enum class ProtocolVersion
 //=============================================================================
 // 5. GLOBALNE KONSTANTE SISTEMA
 //=============================================================================
+#define EEPROM_MAGIC_NUMBER         0xDEADBEEF
+#define EEPROM_CONFIG_VERSION       2
+
 #define MAX_ADDRESS_LIST_SIZE       500
 #define LOG_ENTRY_SIZE              16
 #define MAX_LOG_ENTRIES             3900  // ISPRAVKA: Ograničeno na 62KB umjesto 65KB da stane u 16-bit adresiranje
@@ -145,6 +148,7 @@ enum class ProtocolVersion
 #define APP_START_DEL               12345
 #define FWR_COPY_DEL                1567U
 #define IMG_COPY_DEL                4567U
+
 
 //=============================================================================
 // 6. RS485 KOMANDE (iz common.h)

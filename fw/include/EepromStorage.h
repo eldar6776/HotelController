@@ -27,11 +27,17 @@ struct AdditionalSyncPacket
     uint16_t broadcast_addr;   ///< Broadcast adresa za ovaj paket
 };
 
+
 /**
  * @brief Definicija strukture za konfiguraciju aplikacije.
  */
 struct AppConfig
 {
+    // --- Header ---
+    uint32_t magic_number;                   ///< 0xDEADBEEF - Marker validnosti
+    uint16_t config_version;                 ///< Verzija strukture
+    
+    // --- Data ---
     uint32_t ip_address;                     ///< IP adresa uredjaja
     uint32_t subnet_mask;                    ///< Subnet maska
     uint32_t gateway;                        ///< Default gateway
@@ -42,6 +48,16 @@ struct AppConfig
     char mdns_name[32];                      ///< mDNS ime uredjaja
     uint8_t protocol_version;                ///< Glavni ProtocolVersion enum
     AdditionalSyncPacket additional_sync[3]; ///< Do 3 dodatna TimeSync paketa
+    
+    // NEW: Web Interface Authentication
+    char web_username[32];                   ///< Korisnicko ime za web pristup
+    char web_password[32];                   ///< Lozinka za web pristup
+    
+    // NEW: Logger Control
+    bool logger_enable;                      ///< true = Logger aktivan, false = Logger onemogućen
+    
+    // NEW: TimeSync Interval Control
+    uint8_t time_sync_interval_min;          ///< Interval slanja TimeSync paketa u minutama (0 = onemogućeno)
 };
 
 /**
@@ -162,6 +178,12 @@ public:
     uint16_t GetLogCount();
 
 private:
+    /**
+     * @brief Migrira konfiguraciju sa stare verzije na novu.
+     * @param oldVersion Detektovana stara verzija.
+     */
+    void MigrateConfig(uint16_t oldVersion);
+
     /**
      * @brief Inicijalizuje logger varijable skeniranjem EEPROM-a.
      */

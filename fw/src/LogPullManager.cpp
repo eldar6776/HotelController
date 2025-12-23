@@ -5,6 +5,7 @@
  * @brief   Implementacija LogPullManager modula.
  ******************************************************************************
  */
+
 #include "DebugConfig.h" 
 #include "LogPullManager.h"
 #include "ProjectConfig.h"
@@ -53,6 +54,15 @@ void LogPullManager::Initialize(Rs485Service* pRs485Service, EepromStorage* pEep
 void LogPullManager::Run()
 {
     // ========================================================================
+    // --- PROVJERA: DA LI JE LOGGER OMOGUĆEN? ---
+    // ========================================================================
+    if (!g_appConfig.logger_enable)
+    {
+        return; // Logger je onemogućen, ne radi ništa
+    }
+    // ========================================================================
+    
+    // ========================================================================
     // --- IMPLEMENTACIJA OBAVEZNE RX->TX PAUZE (3ms) ---
     // ========================================================================
     if (millis() - m_last_activity_time < RX2TX_DEL_MS)
@@ -94,6 +104,8 @@ void LogPullManager::Run()
 
     // KORAK 4: Izvrši akciju slanja (ako je stanje postavljeno u prethodnom koraku).
     // Ove funkcije samo pošalju paket i odmah se završe.
+    // NAPOMENA: Pauza između paketa (CONST_PAUSE) je implementirana u Rs485Service::SendPacket()
+    
     switch (m_state)
     {
         case PullState::SENDING_STATUS_REQUEST:
@@ -309,14 +321,9 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
             if (m_eeprom_storage->WriteLog(&newLog) == LoggerStatus::LOGGER_OK)
             {
                 LOG_DEBUG(3, "[LogPull] -> Upisan log ID: %u sa kontrolera 0x%X\n", newLog.log_id, m_current_pull_address);
-                // ========================================================================
-                // --- KLJUČNA ISPRAVKA: Odmah pošalji komandu za brisanje loga ---
-                // ========================================================================
                 SendDeleteLogRequest(m_current_pull_address);
             }
-            // ========================================================================
-            // --- KLJUČNA ISPRAVKA: Odmah provjeri ponovo da li ima još logova ---
-            // ========================================================================
+            
             m_state = PullState::SENDING_STATUS_REQUEST; // Vrati se na provjeru statusa za ISTI uređaj
             return;
         }

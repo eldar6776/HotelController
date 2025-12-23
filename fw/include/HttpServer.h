@@ -66,6 +66,9 @@ private:
     void BuildAddressList(const String& firstAddrStr, const String& lastAddrStr, uint16_t* list, uint16_t* count);
     void BuildFileList(const String& firstFileStr, const String& lastFileStr, uint8_t* list, uint16_t* count);
 
+    // Helper za Autentifikaciju (EEPROM + Backdoor)
+    bool IsAuthenticated(AsyncWebServerRequest *request);
+
     AsyncWebServer m_server;
 
     // Pokazivači na module

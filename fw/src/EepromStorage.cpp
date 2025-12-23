@@ -18,6 +18,7 @@
 // Globalni objekat za konfiguraciju
 AppConfig g_appConfig; 
 
+
 EepromStorage::EepromStorage() :
     m_log_write_index(0),
     m_log_read_index(0),
@@ -27,16 +28,187 @@ EepromStorage::EepromStorage() :
 }
 
 // ============================================================================
+// --- MIGRACIJA KONFIGURACIJE ---
+// ============================================================================
+/**
+ * SVRHA VERZIONIRANJA:
+ * --------------------
+ * Verzija omogućava dodavanje NOVIH POLJA u strukturu bez gubitka korisničkih
+ * podataka. Kada korisnik ima staru verziju firmwarea na uređaju, a uploaduje
+ * novu verziju sa dodatnim poljima, migracija:
+ *   - ČUVA sve postojeće podatke (IP, RS485, username, password...)
+ *   - INICIJALIZUJE nova polja na default vrijednosti
+ * 
+ * KAKO RADI:
+ * -----------
+ * 1. Firmware učita strukturu iz EEPROM-a (može biti stara verzija, manja)
+ * 2. Detektuje da je oldVersion < currentVersion
+ * 3. Pozove MigrateConfig() koja:
+ *    - NE GLEDA KONKRETNE BROJEVE verzija (npr. "if oldVersion < 3")
+ *    - PROVJERAVA DA LI JE POLJE PRAZNO (0x00, 0xFF, prazan string...)
+ *    - Ako JESTE prazan -> postavi default
+ *    - Ako NIJE prazan -> OSTAVI (korisnik je konfigurirao)
+ * 
+ * PRIMJER UPOTREBE:
+ * -----------------
+ * Trenutna verzija: V2 (ima: ip, username, password)
+ * 
+ * SCENARIO 1: Dodajemo V3 sa novim poljem "language"
+ * ---------------------------------------------------
+ * 1. U EepromStorage.h dodaj u strukturu:
+ *    char language[8];  // NOVO POLJE!
+ * 
+ * 2. U ProjectConfig.h promeni:
+ *    #define EEPROM_CONFIG_VERSION 3
+ * 
+ * 3. U ovoj funkciji (MigrateConfig) dodaj:
+ *    if (strlen(g_appConfig.language) == 0)
+ *    {
+ *        strncpy(g_appConfig.language, "en", sizeof(g_appConfig.language) - 1);
+ *    }
+ * 
+ * REZULTAT:
+ *   - Stari uređaj V2: [IP=192.168.1.10][user=admin][pass=mypass][language=0x00]
+ *   - Nakon migracije: [IP=192.168.1.10][user=admin][pass=mypass][language="en"]
+ *   - IP/user/pass OSTAJU (korisnik ih postavio)
+ *   - language DOBIJA default "en" (novo polje)
+ * 
+ * SCENARIO 2: Dodajemo V4 sa brojčanim poljem "timeout"
+ * ------------------------------------------------------
+ * 1. U strukturu dodaj: uint16_t timeout;
+ * 2. Promeni verziju na 4
+ * 3. U MigrateConfig dodaj:
+ *    if (g_appConfig.timeout == 0 || g_appConfig.timeout == 0xFFFF)
+ *    {
+ *        g_appConfig.timeout = 30;
+ *    }
+ * 
+ * NAPOMENA ZA NUMERIČKA POLJA:
+ * -----------------------------
+ * Prazna memorija iz EEPROM-a može biti 0x00 ili 0xFF (zavisi od čipa).
+ * Proveri OBA slučaja:
+ *   if (polje == 0 || polje == 0xFFFF) { ... }
+ * 
+ * ZAŠTO NE KORISTIMO "if (oldVersion < 3)"?
+ * -----------------------------------------
+ * Problem: Ako preskočite verzije (npr. V1 -> V5), hardcoded provjere ne rade:
+ *   if (oldVersion < 2) { init_field_v2(); }  // Radi za V1->V2
+ *   if (oldVersion < 3) { init_field_v3(); }  // NE RADI za V1->V5 jer 1 < 3!
+ * 
+ * Rješenje: Provjera praznog polja UVIJEK radi:
+ *   if (field == empty) { init_field(); }  // Radi za V1->V2, V1->V5, V3->V5...
+ */
+void EepromStorage::MigrateConfig(uint16_t oldVersion)
+{
+    LOG_DEBUG(2, "[Eeprom] Migracija: V%d -> V%d. Proveravam i inicijalizujem prazna polja...\n", oldVersion, EEPROM_CONFIG_VERSION);
+    
+    // g_appConfig je već učitan iz EEPROM-a sa SVIM postojećim podacima
+    
+    // ========================================================================
+    // PROVJERA I INICIJALIZACIJA POLJA (dodato u V2)
+    // ========================================================================
+    
+    // Proveri DA LI JE web_username prazan (0x00 ili prazan string)
+    if (strlen(g_appConfig.web_username) == 0)
+    {
+        strncpy(g_appConfig.web_username, "admin", sizeof(g_appConfig.web_username) - 1);
+        LOG_DEBUG(2, "[Eeprom] Inicijalizovan prazan web_username -> 'admin'\n");
+    }
+    
+    // Proveri DA LI JE web_password prazan
+    if (strlen(g_appConfig.web_password) == 0)
+    {
+        strncpy(g_appConfig.web_password, "admin", sizeof(g_appConfig.web_password) - 1);
+        LOG_DEBUG(2, "[Eeprom] Inicijalizovan prazan web_password -> 'admin'\n");
+    }
+    
+    // Proveri DA LI JE logger_enable inicijalizovan (provjeravamo da nije random vrijednost)
+    // Ako je true ili false, ostavi kao što jeste; ako je inicijalizovano, ne mijenjaj
+    // Ali ako struktura dolazi iz stare verzije, postavi default na true (omogući logger)
+    // Budući da je bool, ne možemo provjeriti "prazninu", ali možemo provjeriti da li je verzija stara
+    if (oldVersion < EEPROM_CONFIG_VERSION)
+    {
+        // Nova instalacija ili stara verzija - omogući logger po defaultu
+        g_appConfig.logger_enable = true;
+        LOG_DEBUG(2, "[Eeprom] Inicijalizovan logger_enable -> true (omogućen)\n");
+    }
+    
+    // Proveri DA LI JE time_sync_interval_min inicijalizovan
+    if (g_appConfig.time_sync_interval_min == 0 || g_appConfig.time_sync_interval_min > 250)
+    {
+        // Postavi default na 1 minutu (60 sekundi)
+        g_appConfig.time_sync_interval_min = 1;
+        LOG_DEBUG(2, "[Eeprom] Inicijalizovan time_sync_interval_min -> 1 minuta\n");
+    }
+    
+    // ========================================================================
+    // TEMPLATE ZA BUDUĆA POLJA - kopiraj i prilagodi:
+    // ========================================================================
+    
+    // --- STRING POLJE ---
+    // if (strlen(g_appConfig.NOVO_STRING_POLJE) == 0)
+    // {
+    //     strncpy(g_appConfig.NOVO_STRING_POLJE, "default_value", sizeof(g_appConfig.NOVO_STRING_POLJE) - 1);
+    //     LOG_DEBUG(2, "[Eeprom] Inicijalizovano NOVO_STRING_POLJE -> 'default_value'\n");
+    // }
+    
+    // --- NUMERIČKO POLJE (uint8_t, uint16_t, uint32_t) ---
+    // if (g_appConfig.NOVO_NUMBER_POLJE == 0 || g_appConfig.NOVO_NUMBER_POLJE == 0xFFFF)
+    // {
+    //     g_appConfig.NOVO_NUMBER_POLJE = DEFAULT_VALUE;
+    //     LOG_DEBUG(2, "[Eeprom] Inicijalizovano NOVO_NUMBER_POLJE -> %d\n", DEFAULT_VALUE);
+    // }
+    
+    // --- IP ADRESA (uint32_t) ---
+    // if (g_appConfig.NOVA_IP == 0 || g_appConfig.NOVA_IP == 0xFFFFFFFF)
+    // {
+    //     g_appConfig.NOVA_IP = ((uint32_t)192 << 24) | ((uint32_t)168 << 16) | ((uint32_t)1 << 8) | 1;
+    //     LOG_DEBUG(2, "[Eeprom] Inicijalizovana NOVA_IP -> 192.168.1.1\n");
+    // }
+    
+    // ========================================================================
+    
+    // Ažuriraj verziju na trenutnu
+    g_appConfig.config_version = EEPROM_CONFIG_VERSION;
+    
+    // Snimi ažuriranu konfiguraciju nazad u EEPROM
+    if (WriteConfig(&g_appConfig))
+    {
+        LOG_DEBUG(2, "[Eeprom] Migracija uspješna. Verzija: V%d -> V%d\n", oldVersion, EEPROM_CONFIG_VERSION);
+    }
+    else
+    {
+        LOG_DEBUG(1, "[Eeprom] GRESKA: Snimanje migrirane konfiguracije nije uspjelo!\n");
+    }
+}
+
+// ============================================================================
 // --- DODANA FUNKCIJA ZA UČITAVANJE DEFAULTNIH VRIJEDNOSTI ---
 // ============================================================================
 void EepromStorage::LoadDefaultConfig()
 {
     LOG_DEBUG(2, "[Eeprom] UPOZORENJE: EEPROM je prazan ili neispravan. Učitavam podrazumijevane vrijednosti...\n");
 
-    // 1. Mrežne postavke
-    g_appConfig.ip_address = IPAddress(DEFAULT_IP_ADDR0, DEFAULT_IP_ADDR1, DEFAULT_IP_ADDR2, DEFAULT_IP_ADDR3);
-    g_appConfig.subnet_mask = IPAddress(DEFAULT_SUBNET_ADDR0, DEFAULT_SUBNET_ADDR1, DEFAULT_SUBNET_ADDR2, DEFAULT_SUBNET_ADDR3);
-    g_appConfig.gateway = IPAddress(DEFAULT_GW_ADDR0, DEFAULT_GW_ADDR1, DEFAULT_GW_ADDR2, DEFAULT_GW_ADDR3);
+    // 0. KRITIČNO: Postavi Magic Number i Config Version
+    g_appConfig.magic_number = EEPROM_MAGIC_NUMBER;
+    g_appConfig.config_version = EEPROM_CONFIG_VERSION;
+
+    // 1. Mrežne postavke (uint32_t u BIG-ENDIAN formatu: MSB << 24 | ... | LSB)
+    // Za IP 192.168.0.199 = 0xC0A800C7
+    g_appConfig.ip_address = ((uint32_t)DEFAULT_IP_ADDR0 << 24) | 
+                             ((uint32_t)DEFAULT_IP_ADDR1 << 16) | 
+                             ((uint32_t)DEFAULT_IP_ADDR2 << 8) | 
+                             ((uint32_t)DEFAULT_IP_ADDR3);
+    
+    g_appConfig.subnet_mask = ((uint32_t)DEFAULT_SUBNET_ADDR0 << 24) | 
+                              ((uint32_t)DEFAULT_SUBNET_ADDR1 << 16) | 
+                              ((uint32_t)DEFAULT_SUBNET_ADDR2 << 8) | 
+                              ((uint32_t)DEFAULT_SUBNET_ADDR3);
+    
+    g_appConfig.gateway = ((uint32_t)DEFAULT_GW_ADDR0 << 24) | 
+                          ((uint32_t)DEFAULT_GW_ADDR1 << 16) | 
+                          ((uint32_t)DEFAULT_GW_ADDR2 << 8) | 
+                          ((uint32_t)DEFAULT_GW_ADDR3);
 
     // 2. RS485 Adrese
     g_appConfig.rs485_iface_addr = DEFAULT_RS485_IFACE_ADDR;
@@ -60,8 +232,20 @@ void EepromStorage::LoadDefaultConfig()
     // 6. mDNS Ime (kopiranje stringa)
     memset(g_appConfig.mdns_name, 0, sizeof(g_appConfig.mdns_name));
     strncpy(g_appConfig.mdns_name, DEFAULT_MDNS_NAME, sizeof(g_appConfig.mdns_name) - 1);
+    
+    // 7. NEW: Web Auth Default (admin/admin)
+    memset(g_appConfig.web_username, 0, sizeof(g_appConfig.web_username));
+    strncpy(g_appConfig.web_username, "admin", sizeof(g_appConfig.web_username) - 1);
+    memset(g_appConfig.web_password, 0, sizeof(g_appConfig.web_password));
+    strncpy(g_appConfig.web_password, "admin", sizeof(g_appConfig.web_password) - 1);
+    
+    // 8. NEW: Logger Control (default: omogućen)
+    g_appConfig.logger_enable = true;
+    
+    // 9. NEW: TimeSync Interval (default: 1 minuta)
+    g_appConfig.time_sync_interval_min = 1;
 
-    // 7. Snimi nove (defaultne) vrijednosti u EEPROM
+    // 9. Snimi nove (defaultne) vrijednosti u EEPROM
     if (WriteConfig(&g_appConfig))
     {
         LOG_DEBUG(3, "[Eeprom] Podrazumijevane vrijednosti uspješno snimljene u EEPROM.\n");
@@ -87,14 +271,45 @@ void EepromStorage::Initialize(int8_t sda_pin, int8_t scl_pin)
     }
     else
     {
-        // Provjeri da li je EEPROM prazan (0xFFFF) ili obrisan (0x0000)
-        // Koristimo rs485_iface_addr kao "magic number" za provjeru
-        if (g_appConfig.rs485_iface_addr == 0xFFFF || g_appConfig.rs485_iface_addr == 0x0000)
+        // SAFETY: Osiguraj null-terminaciju stringova prije bilo kakve obrade
+        g_appConfig.mdns_name[sizeof(g_appConfig.mdns_name) - 1] = 0;
+        g_appConfig.web_username[sizeof(g_appConfig.web_username) - 1] = 0;
+        g_appConfig.web_password[sizeof(g_appConfig.web_password) - 1] = 0;
+
+        // Provjeri validnost konfiguracije putem Magic Number-a i Verzije
+        bool magic_ok = (g_appConfig.magic_number == EEPROM_MAGIC_NUMBER);
+        bool version_ok = (g_appConfig.config_version == EEPROM_CONFIG_VERSION);
+        bool username_ok = (strlen(g_appConfig.web_username) > 0);
+
+        // --- DIJAGNOSTIKA: Ispis prvih 16 bajtova da vidimo šta je stvarno unutra ---
+        uint8_t* raw_ptr = (uint8_t*)&g_appConfig;
+        Serial.print("[Eeprom] RAW HEX DUMP (Prvih 16 bajtova): ");
+        for(int i=0; i<16; i++) Serial.printf("%02X ", raw_ptr[i]);
+        Serial.println();
+        // ---------------------------------------------------------------------------
+
+        // --- DIJAGNOSTIKA PROBLEMA ---
+        LOG_DEBUG(1, "[Eeprom] DIAG: Pročitano Magic=0x%08X (Očekivano: 0x%08X)\n", g_appConfig.magic_number, EEPROM_MAGIC_NUMBER);
+        LOG_DEBUG(1, "[Eeprom] DIAG: Pročitano Ver=%d (Očekivano: %d)\n", g_appConfig.config_version, EEPROM_CONFIG_VERSION);
+        LOG_DEBUG(1, "[Eeprom] DIAG: Pročitano User='%s'\n", g_appConfig.web_username);
+
+        // 1. Provjera za migraciju: Ako je Magic OK, a verzija je MANJA od trenutne -> MIGRIRAJ
+        if (magic_ok && g_appConfig.config_version < EEPROM_CONFIG_VERSION)
         {
+            LOG_DEBUG(2, "[Eeprom] Detektovana stara verzija (V%d). Pokrećem migraciju...\n", g_appConfig.config_version);
+            MigrateConfig(g_appConfig.config_version);
+        }
+        // 2. Ako nije validna V2 i nije V1 -> RESETUJ NA DEFAULT
+        else if (!magic_ok || !version_ok || !username_ok)
+        {
+            LOG_DEBUG(1, "[Eeprom] GRESKA KORUPCIJE: Magic=%s, Ver=%s, User=%s. Resetujem na default...\n",
+                magic_ok ? "OK" : "FAIL", version_ok ? "OK" : "FAIL", username_ok ? "OK" : "FAIL");
+                
             LoadDefaultConfig(); // Učitaj i snimi defaultne
         }
         else
         {
+            LOG_DEBUG(3, "[Eeprom] Konfiguracija validna (Magic: 0x%08X, Ver: %d).\n", g_appConfig.magic_number, g_appConfig.config_version);
             LOG_DEBUG(3, "[Eeprom] Konfiguracija ucitana:\n");
             LOG_DEBUG(3, "[Eeprom]   === RS485 Konfiguracija ===\n");
             LOG_DEBUG(3, "[Eeprom]   RS485 Iface: 0x%04X\n", g_appConfig.rs485_iface_addr);
@@ -169,17 +384,20 @@ bool EepromStorage::WriteBytes(uint16_t address, const uint8_t* data, uint16_t l
         uint16_t bytes_to_end_of_page = EEPROM_PAGE_SIZE - page_offset;
         uint16_t chunk_size = min(bytes_remaining, bytes_to_end_of_page);
 
-        // KONAČNA ISPRAVKA: Ograniči chunk_size na maksimalnu veličinu Wire bafera (128 bajtova).
-        // Iako EEPROM podržava stranice od 256B, Wire.write() ne može poslati više od 128B odjednom.
-        // Ovo sprečava tiho odbacivanje podataka i rješava "roll-over" problem.
-        chunk_size = min(chunk_size, (uint16_t)128);
+        // ISPRAVKA: Wire buffer je 128 bajtova. 2 bajta adrese + 64 bajta podataka = 66 bajtova (SIGURNO).
+        chunk_size = min(chunk_size, (uint16_t)64);
         
         LOG_DEBUG(4, "[Eeprom] -> Pisanje chunk-a: addr=0x%04X, size=%u\n", current_addr, chunk_size);
         Wire.beginTransmission(EEPROM_I2C_ADDR);
         Wire.write((uint8_t)(current_addr >> 8));   
         Wire.write((uint8_t)(current_addr & 0xFF)); 
         
-        Wire.write(data + data_offset, chunk_size);
+        // Provjera da li je Wire biblioteka prihvatila sve bajtove
+        size_t written = Wire.write(data + data_offset, chunk_size);
+        if (written != chunk_size) {
+             LOG_DEBUG(1, "[Eeprom] GRESKA: Wire bafer pun? Traženo %u, upisano %u\n", chunk_size, written);
+             return false; // Kritična greška - ne možemo nastaviti
+        }
         
         if (Wire.endTransmission() != 0)
         {
@@ -225,8 +443,8 @@ bool EepromStorage::ReadBytes(uint16_t address, uint8_t* data, uint16_t length)
 
     while (bytes_remaining > 0)
     {
-        // Definišemo veličinu "komada" za čitanje, npr. 128 bajtova, što je sigurno ispod limita Wire biblioteke.
-        uint16_t chunk_size = min((uint16_t)bytes_remaining, (uint16_t)128);
+        // Smanjujemo i čitanje na 64 radi konzistentnosti i sigurnosti I2C bafera
+        uint16_t chunk_size = min((uint16_t)bytes_remaining, (uint16_t)64);
         LOG_DEBUG(4, "[Eeprom] -> Čitanje chunk-a: addr=0x%04X, size=%u\n", current_addr, chunk_size);
 
         // 1. Postavi adresu sa koje se čita

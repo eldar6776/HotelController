@@ -307,7 +307,16 @@ void TimeSync::SendTimeBroadcast()
  */
 bool TimeSync::IsTimeToSync()
 {
-    return (millis() - m_last_sync_time > TIME_BROADCAST_INTERVAL_MS);
+    // Ako je interval postavljen na 0, TimeSync je onemogućen
+    if (g_appConfig.time_sync_interval_min == 0)
+    {
+        return false;
+    }
+    
+    // Pretvori minute u milisekunde
+    uint32_t interval_ms = (uint32_t)g_appConfig.time_sync_interval_min * 60000UL;
+    
+    return (millis() - m_last_sync_time > interval_ms);
 }
 
 void TimeSync::ResetTimer()

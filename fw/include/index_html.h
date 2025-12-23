@@ -42,123 +42,148 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <body>
     <div class="container">
     <h2>ESP32 Hotel Controller - Web Interface</h2>
-    <br>
-    Prva/Odabrana adresa.......<input id="kont101" value="100" type="number" min="1" max="65000" onchange="kont102.value = this.value">
-    <hr>
-    Zadnja/Nova adresa..........<input id="kont102" value="100" type="number" min="1" max="65000"> &nbsp; &nbsp; &nbsp;
-    <hr>
-    Grupna adresa..................<input id="kont103" value="26486" type="number" min="1" max="65000"> &nbsp; &nbsp; &nbsp;
-    <hr>
-    Broadcast adresa..............<input id="kont104" value="39321" type="number" min="1" max="65000"> &nbsp;
-    <hr>
-    RS485 interface baudrate:
-    <select id="kont105" name="interface_baudrate" title="Brzina RS485 interfejsa">
-        <option value="0">2400 bps</option>
-        <option value="1">4800 bps</option>
-        <option value="2">9600 bps</option>
-        <option value="3">19200 bps</option>
-        <option value="4">38400 bps</option>
-        <option value="5">57600 bps</option>
-        <option selected value="6">115200 bps</option>
-        <option value="7">230400 bps</option>
-        <option value="8">460800 bps</option>
-        <option value="9">921600 bps</option>
-    </select>
-    &nbsp;
-    <input id="kont106" value="Promjena adresa" type="button" onclick="send_event(106)">
-    <hr>
-    Sistem ID ciljanog kontrolera: <input id="kont107" value="%SYSID%" type="number" min="1" max="65000">
-    <input value="Promjeni Sistem ID" type="button" onclick="send_event(107)">
     <hr>
     
-    <!-- NEW: Protocol Selection -->
-    <h3>Podešavanje Protokola</h3>
-    Glavni protokol sistema:
-    <select id="kont110" name="main_protocol">
-        <option value="0">Hills</option>
-        <option value="1" selected>Bjelašnica</option>
-        <option value="2">Saplast</option>
-        <option value="3">Boss</option>
-        <option value="4">Vučko</option>
-        <option value="5">ULM</option>
-        <option value="6">Vrata Bosne</option>
-        <option value="7">Baškuća</option>
-        <option value="8">Džafić</option>
-        <option value="9">Sax</option>
-    </select>
-    <input value="Snimi Protokol" type="button" onclick="send_event(111)">
+    <!-- RS485 Konfiguracija -->
+    <div class="file-section">
+        <h3>RS485 Konfiguracija</h3>
+        Prva/Odabrana adresa.......<input id="kont101" value="100" type="number" min="1" max="65000" onchange="kont102.value = this.value">
+        <hr>
+        Zadnja/Nova adresa..........<input id="kont102" value="100" type="number" min="1" max="65000">
+        <hr>
+        Grupna adresa..................<input id="kont103" value="26486" type="number" min="1" max="65000">
+        <hr>
+        Broadcast adresa..............<input id="kont104" value="39321" type="number" min="1" max="65000">
+        <hr>
+        RS485 interface baudrate:
+        <select id="kont105" name="interface_baudrate" title="Brzina RS485 interfejsa">
+            <option value="0">2400 bps</option>
+            <option value="1">4800 bps</option>
+            <option value="2">9600 bps</option>
+            <option value="3">19200 bps</option>
+            <option value="4">38400 bps</option>
+            <option value="5">57600 bps</option>
+            <option selected value="6">115200 bps</option>
+            <option value="7">230400 bps</option>
+            <option value="8">460800 bps</option>
+            <option value="9">921600 bps</option>
+        </select>
+        <input id="kont106" value="Promjena adresa" type="button" onclick="send_event(106)">
+        <hr>
+        Sistem ID ciljanog kontrolera: <input id="kont107" value="%SYSID%" type="number" min="1" max="65000">
+        <input value="Promjeni Sistem ID" type="button" onclick="send_event(107)">
+        <hr>
+        <h4>Upravljanje Listom Adresa</h4>
+        <input value="Učitaj Listu Kontrolera" type="button" onclick="load_address_list()" 
+               title="Učitava CTRL_ADD.TXT sa uSD kartice i kešira u EEPROM">
+        <span style="color: #666; font-size: 0.9em;">(Učitava iz CTRL_ADD.TXT na uSD kartici)</span>
+        <hr>
+        <input type="checkbox" id="logger_enable" onchange="send_event(108)">
+        <label for="logger_enable">Omogući Logove</label>
+        <span style="color: #666; font-size: 0.9em;">(Omogućava/onemogućava prikupljanje logova sa kontrolera)</span>
+    </div>
     <hr>
     
-    <!-- NEW: Address List Management -->
-    <h3>Upravljanje Listom Adresa</h3>
-    <input value="Učitaj Listu Kontrolera" type="button" onclick="load_address_list()" 
-           title="Učitava CTRL_ADD.TXT sa uSD kartice i kešira u EEPROM">
-    <span style="color: #666; font-size: 0.9em;">(Učitava iz CTRL_ADD.TXT na uSD kartici)</span>
+    <!-- Protokol i Sync -->
+    <div class="file-section">
+        <h3>Podešavanje Protokola</h3>
+        Glavni protokol sistema:
+        <select id="kont110" name="main_protocol">
+            <option value="0">Hills</option>
+            <option value="1" selected>Bjelašnica</option>
+            <option value="2">Saplast</option>
+            <option value="3">Boss</option>
+            <option value="4">Vučko</option>
+            <option value="5">ULM</option>
+            <option value="6">Vrata Bosne</option>
+            <option value="7">Baškuća</option>
+            <option value="8">Džafić</option>
+            <option value="9">Sax</option>
+        </select>
+        <input value="Snimi Protokol" type="button" onclick="send_event(111)">
+    </div>
     <hr>
     
-    <input id="kont201" value="Podesi vrijeme" type="button" onclick="set_time()">
-    <input id="kont202" value="Pregledaj log" type="button" onclick="get_log()">
-    <input id="kont203" value="Obrisi log" type="button" onclick="delete_log()">
-    <input id="kont204" value="Brisi log listu" type="button" onclick="delete_log_list()">
-    <br>
-    <br>
-    <span id="log0">Status: Spreman.</span>
+    <!-- Alati i Log -->
+    <div class="file-section">
+        <h3>Alati</h3>
+        <input id="kont201" value="Podesi vrijeme" type="button" onclick="set_time()">
+        <input id="kont202" value="Pregledaj log" type="button" onclick="get_log()">
+        <input id="kont203" value="Obrisi log" type="button" onclick="delete_log()">
+        <input id="kont204" value="Brisi log listu" type="button" onclick="delete_log_list()">
+        <br><br>
+        <span id="log0">Status: Spreman.</span>
+        <hr>
+        <input value="Reset glavnog kontrolera" type="button" onclick="send_event(450)">
+        <input value="Reset adresiranog kontrolera" type="button" onclick="send_event(451)">
+        <input value="Reset SOS" type="button" onclick="send_event(452)">
+    </div>
     <hr>
-    <input id="kont301" value="Provjeri status" type="button" onclick="send_event(301)">
-    Promjeni status:
-    <select id="kont302" onchange="send_event(302)">
-        <option value="0">U pripremi</option>
-        <option value="1">Spremna</option>
-        <option value="2">Zauzeta</option>
-        <option value="3">Ciscenje</option>
-        <option value="4">Zamjena posteljine</option>
-        <option value="5">Generalno C.</option>
-        <option value="6">Neupotrebljiva</option>
-        <option value="7">Late CheckOut</option>
-        <option value="8">Sobarica u sobi</option>
-        <option value="9">Reset DND</option>
-        <option value="10">Alarm pozara</option>
-        <option value="11">Pozarni put</option>
-    </select>
+    
+    <!-- Kontrola Soba -->
+    <div class="file-section">
+        <h3>Kontrola Soba</h3>
+        <input id="kont301" value="Provjeri status" type="button" onclick="send_event(301)">
+        Promjeni status:
+        <select id="kont302" onchange="send_event(302)">
+            <option value="0">U pripremi</option>
+            <option value="1">Spremna</option>
+            <option value="2">Zauzeta</option>
+            <option value="3">Ciscenje</option>
+            <option value="4">Zamjena posteljine</option>
+            <option value="5">Generalno C.</option>
+            <option value="6">Neupotrebljiva</option>
+            <option value="7">Late CheckOut</option>
+            <option value="8">Sobarica u sobi</option>
+            <option value="9">Reset DND</option>
+            <option value="10">Alarm pozara</option>
+            <option value="11">Pozarni put</option>
+        </select>
+        <hr>
+        Podesi period zamjene posteljine: <input id="kont303" onchange="send_event(303)" value="0" type="number" min="0" max="99">
+        <hr>
+        Podesi osvjetljenje displeja......... <input id="kont304" onchange="send_event(304)" value="500" type="number" min="100" max="900">
+        <input id="kont305" value="Pregled slika" type="button" onclick="send_event(305)">
+        <hr>
+        <input id="kont408" onchange="send_event(408)" type="checkbox" value="0">
+        Forsiraj digitalne izlaze...
+        0<input id="kont400" onchange="send_event(408)" type="checkbox" value="0">
+        1<input id="kont401" onchange="send_event(408)" type="checkbox" value="0">
+        2<input id="kont402" onchange="send_event(408)" type="checkbox" value="0">
+        3<input id="kont403" onchange="send_event(408)" type="checkbox" value="0">
+        4<input id="kont404" onchange="send_event(408)" type="checkbox" value="0">
+        5<input id="kont405" onchange="send_event(408)" type="checkbox" value="0">
+        6<input id="kont406" onchange="send_event(408)" type="checkbox" value="0">
+        7<input id="kont407" onchange="send_event(408)" type="checkbox" value="0">
+    </div>
     <hr>
-    Podesi period zamjene posteljine: <input id="kont303" onchange="send_event(303)" value="0" type="number" min="0" max="99">
+    
+    <!-- Update Funkcije -->
+    <div class="file-section">
+        <h3>Update Funkcije</h3>
+        <input value="Update Firmwarea" type="button" onclick="send_event(480)">
+        <input value="Update Bootloadera" type="button" onclick="send_event(481)">
+        <hr>
+        Prva slika: <input id="kont501" onchange="kont502.value = this.value" value="1" type="number" min="1" max="21">&nbsp;
+        Zadnja slika: <input id="kont502" onchange="" value="1" type="number" min="1" max="21">&nbsp;
+        <input value="Update slika" type="button" onclick="send_event(503)">
+    </div>
     <hr>
-    Podesi osvjetljenje displeja......... <input id="kont304" onchange="send_event(304)" value="500" type="number" min="100" max="900">
-    <input id="kont305" value="Pregled slika" type="button" onclick="send_event(305)">
-    <hr>
-    <input id="kont408" onchange="send_event(408)" type="checkbox" value="0">
-    Forsiraj digitalne izlaze...
-    0<input id="kont400" onchange="send_event(408)" type="checkbox" value="0">
-    1<input id="kont401" onchange="send_event(408)" type="checkbox" value="0">
-    2<input id="kont402" onchange="send_event(408)" type="checkbox" value="0">
-    3<input id="kont403" onchange="send_event(408)" type="checkbox" value="0">
-    4<input id="kont404" onchange="send_event(408)" type="checkbox" value="0">
-    5<input id="kont405" onchange="send_event(408)" type="checkbox" value="0">
-    6<input id="kont406" onchange="send_event(408)" type="checkbox" value="0">
-    7<input id="kont407" onchange="send_event(408)" type="checkbox" value="0">
-    <hr>
-    <input value="Reset glavnog kontrolera" type="button" onclick="send_event(450)">
-    <input value="Reset adresiranog kontrolera" type="button" onclick="send_event(451)">
-    <input value="Reset SOS" type="button" onclick="send_event(452)">
-    <hr>
-    <input value="Update Firmwarea" type="button" onclick="send_event(480)">
-    <input value="Update Bootloadera" type="button" onclick="send_event(481)">
-    <hr>
-    Prva slika: <input id="kont501" onchange="kont502.value = this.value" value="1" type="number" min="1" max="21">&nbsp;
-    Zadnja slika: <input id="kont502" onchange="" value="1" type="number" min="1" max="21">&nbsp; &nbsp; &nbsp;
-    <input value="Update slika" type="button" onclick="send_event(503)">
-    <hr>
-    IP adresa............<input id="kont550" value="%IP0%" type="number" min="0" max="255"> <input id="kont551" value="%IP1%" type="number" min="0" max="255"> <input id="kont552" value="%IP2%" type="number" min="0" max="255"> <input id="kont553" value="%IP3%" type="number" min="0" max="255">
-    <hr>
-    Subnet Mask......<input id="kont560" value="%NM0%" type="number" min="0" max="255"> <input id="kont561" value="%NM1%" type="number" min="0" max="255"> <input id="kont562" value="%NM2%" type="number" min="0" max="255"> <input id="kont563" value="%NM3%" type="number" min="0" max="255">
-    <hr>
-    Default Gateway.<input id="kont570" value="%GW0%" type="number" min="0" max="255"> <input id="kont571" value="%GW1%" type="number" min="0" max="255"> <input id="kont572" value="%GW2%" type="number" min="0" max="255"> <input id="kont573" value="%GW3%" type="number" min="0" max="255">
-    <br>
-    <br>&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;  &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
-    <input value="Promjena IP adresa" type="button" onclick="send_event(575)">
-    <hr>
-    Sistem ID:..........<input id="kont580" value="%SYSID%" type="number" min="1" max="65000">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;
-    <input value="Promjena ID sistema" type="button" onclick="send_event(581)">
+    
+    <!-- Mrežne Postavke -->
+    <div class="file-section">
+        <h3>Mrežne Postavke</h3>
+        IP adresa............<input id="kont550" value="%IP0%" type="number" min="0" max="255"> <input id="kont551" value="%IP1%" type="number" min="0" max="255"> <input id="kont552" value="%IP2%" type="number" min="0" max="255"> <input id="kont553" value="%IP3%" type="number" min="0" max="255">
+        <hr>
+        Subnet Mask......<input id="kont560" value="%NM0%" type="number" min="0" max="255"> <input id="kont561" value="%NM1%" type="number" min="0" max="255"> <input id="kont562" value="%NM2%" type="number" min="0" max="255"> <input id="kont563" value="%NM3%" type="number" min="0" max="255">
+        <hr>
+        Default Gateway.<input id="kont570" value="%GW0%" type="number" min="0" max="255"> <input id="kont571" value="%GW1%" type="number" min="0" max="255"> <input id="kont572" value="%GW2%" type="number" min="0" max="255"> <input id="kont573" value="%GW3%" type="number" min="0" max="255">
+        <hr>
+        <input value="Promjena IP adresa" type="button" onclick="send_event(575)">
+        <hr>
+        Sistem ID:..........<input id="kont580" value="%SYSID%" type="number" min="1" max="65000">
+        <input value="Promjena ID sistema" type="button" onclick="send_event(581)">
+    </div>
     <hr>
     
     <!-- NEW: File Upload Section -->
@@ -251,6 +276,39 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
         
         <input type="button" value="Snimi Dodatne Sync Pakete" onclick="send_event(600)" style="margin-top: 10px;">
+        
+        <!-- NEW: TimeSync Interval Control -->
+        <div style="margin-top: 20px; padding: 10px; background-color: #f0f8ff; border-radius: 5px;">
+            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Interval Slanja TimeSync Paketa (minute):</label>
+            <input type="number" id="time_sync_interval" min="0" max="255" value="1" placeholder="0 = onemogućeno" style="width: 120px;">
+            <span style="color: #666; font-size: 0.85em; margin-left: 10px;">(0 = onemogućeno, max 255)</span>
+            <br>
+            <input type="button" value="Snimi Interval" onclick="send_event(109)" style="margin-top: 8px;">
+        </div>
+    </div>
+    <hr>
+
+    <!-- NEW: OTA System Update Section -->
+    <div class="file-section" style="border-left: 5px solid #ff9800;">
+        <h3>Sistemski Update (OTA)</h3>
+        <p style="color: #666; font-size: 0.9em;">Update firmware-a ovog kontrolera.</p>
+        <form id="otaForm" enctype="multipart/form-data">
+            <input type="file" id="otaInput" name="update" accept=".bin">
+            <input type="button" value="Start Update" onclick="perform_ota_update()" style="background-color: #ff9800;">
+        </form>
+        <div id="otaProgress" style="margin-top: 10px; color: #666;"></div>
+    </div>
+
+    <!-- NEW: Web Security Section -->
+    <div class="file-section" style="border-left: 5px solid #dc3545;">
+        <h3>Web Sigurnost (Promjena Lozinke)</h3>
+        <p style="color: #666; font-size: 0.9em;">Promijenite pristupne podatke za ovaj web interfejs.</p>
+        
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+            <input type="text" id="new_username" placeholder="Novi Username">
+            <input type="password" id="new_password" placeholder="Nova Lozinka">
+            <input type="button" value="Promijeni Podatke" onclick="update_credentials()" style="background-color: #dc3545;">
+        </div>
     </div>
     
     </div>
@@ -503,6 +561,88 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
     }
 
+    // --- NEW: OTA System Update ---
+    function perform_ota_update() {
+        var fileInput = document.getElementById('otaInput');
+        var file = fileInput.files[0];
+        
+        if (!file) {
+            alert('Odaberi firmware (.bin) fajl prvo!');
+            return;
+        }
+        
+        if (!confirm('UPOZORENJE: Ovo će ažurirati sistemski firmware i restartovati uređaj. Nastaviti?')) {
+            return;
+        }
+
+        var formData = new FormData();
+        formData.append('update', file); 
+
+        document.getElementById('otaProgress').textContent = 'Uploading & Updating... Please wait...';
+        document.getElementById('otaProgress').style.color = '#ff9800';
+        
+        // Disable inputs
+        fileInput.disabled = true;
+        
+        fetch('/update', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+             if (!response.ok) throw new Error("Update failed with status " + response.status);
+             return response.text();
+        })
+        .then(text => {
+            if (text === "OK") {
+                document.getElementById('otaProgress').textContent = 'Update SUCCESS! Restarting...';
+                document.getElementById('otaProgress').style.color = 'green';
+                setTimeout(() => { location.reload(); }, 10000); // Reload after 10s to be safe
+            } else {
+                throw new Error("Device returned: " + text);
+            }
+        })
+        .catch(e => {
+            document.getElementById('otaProgress').textContent = 'Update ERROR: ' + e.message;
+            document.getElementById('otaProgress').style.color = 'red';
+            fileInput.disabled = false;
+        });
+    }
+
+    // --- NEW: Update Credentials ---
+    function update_credentials() {
+        var user = document.getElementById('new_username').value.trim();
+        var pass = document.getElementById('new_password').value.trim();
+        
+        if (user.length === 0 || pass.length === 0) {
+            alert('Username i Password ne smiju biti prazni!');
+            return;
+        }
+
+        if (!confirm('Jeste li sigurni da želite promijeniti pristupne podatke?')) {
+            return;
+        }
+
+        var formData = new FormData();
+        formData.append('user', user);
+        formData.append('pass', pass);
+
+        fetch('/update_credentials', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) throw new Error(response.statusText);
+            return response.text();
+        })
+        .then(text => {
+            alert('Uspjeh: ' + text + '\nStranica će se sada osvježiti (morat ćete se ponovo prijaviti).');
+            location.reload();
+        })
+        .catch(e => {
+            alert('Greška: ' + e.message);
+        });
+    }
+
     // --- Original Functions ---
     function get_log() {
         send_request("sysctrl.cgi?log=3");
@@ -541,6 +681,14 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         }
         else if (t == "107") {
             htt = "sysctrl.cgi?sid=" + document.getElementById("kont101").value + "&nid=" + document.getElementById("kont107").value;
+        }
+        else if (t == "108") { // Logger enable/disable
+            var enabled = document.getElementById("logger_enable").checked ? "1" : "0";
+            htt = "sysctrl.cgi?logger_en=" + enabled;
+        }
+        else if (t == "109") { // TimeSync Interval
+            var intervalMin = document.getElementById("time_sync_interval").value;
+            htt = "sysctrl.cgi?time_sync_interval=" + intervalMin;
         }
         else if (t == "111") { // Snimanje glavnog protokola
             htt = "sysctrl.cgi?set_proto=" + document.getElementById("kont110").value;
@@ -652,6 +800,18 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                         if (protoSelect) protoSelect.value = protocol;
                         if (addrInput) addrInput.value = address;
                     }
+                }
+                
+                // Postavi logger_enable checkbox
+                const loggerCheckbox = document.getElementById('logger_enable');
+                if (loggerCheckbox && data.logger_enable !== undefined) {
+                    loggerCheckbox.checked = data.logger_enable;
+                }
+                
+                // Postavi time_sync_interval input field (u minutama)
+                const intervalInput = document.getElementById('time_sync_interval');
+                if (intervalInput && data.time_sync_interval_min !== undefined) {
+                    intervalInput.value = data.time_sync_interval_min;
                 }
             })
             .catch(error => console.error('Error loading sync config:', error));

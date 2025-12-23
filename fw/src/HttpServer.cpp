@@ -21,6 +21,7 @@
 #include "EepromStorage.h"
 #include "SdCardManager.h"
 #include "HttpResponseStrings.h" // NOVO: Uključujemo centralizovane stringove
+#include <Update.h>
 #include <SD.h>
 #include <cstring>
 #include <time.h>
@@ -50,22 +51,80 @@ void HttpServer::Initialize(
     m_eeprom_storage = pEepromStorage;
     m_sd_card_manager = pSdCardManager;
 
-    // 1. Serviranje glavne stranice (Frontend)
+    // 1. Serviranje glavne stranice (Frontend) - ZASTICENO
     m_server.on("/", HTTP_GET, [this](AsyncWebServerRequest *request)
-                { this->HandleRoot(request); });
+    {
+        if (!this->IsAuthenticated(request))
+        {
+            return request->requestAuthentication();
+        }
+        this->HandleRoot(request); 
+    });
 
     // 2. Glavni CGI handler (Backend)
     m_server.on("/sysctrl.cgi", HTTP_GET, [this](AsyncWebServerRequest *request)
                 { this->HandleSysctrlRequest(request); });
 
-    // 3. Handler za upload FW fajlova (POST)
-    m_server.on("/upload-firmware", HTTP_POST, [](AsyncWebServerRequest *request)
-                { request->send(200, "text/plain", "Upload OK"); }, [this](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
-                { this->HandleFileUpload(request, filename, index, data, len, final); });
+    // 3. Handler za upload FW fajlova (POST) - ZASTICENO
+    m_server.on("/upload-firmware", HTTP_POST, [this](AsyncWebServerRequest *request)
+    { 
+        if (!this->IsAuthenticated(request))
+        {
+            return request->requestAuthentication();
+        }
+        request->send(200, "text/plain", "Upload OK"); 
+    }, 
+    [this](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final)
+    { 
+        // Upload handler nastavlja rad (auth je provjeren u request handleru)
+        this->HandleFileUpload(request, filename, index, data, len, final); 
+    });
 
-    // 4. NEW: File Browser Endpoints
+    // 3b. Handler za OTA update samog uređaja (Web OTA)
+    // HTTP_GET uklonjen jer je UI sada na glavnoj stranici (index.html)
+
+    m_server.on("/update", HTTP_POST, [this](AsyncWebServerRequest *request) {
+        if (!this->IsAuthenticated(request)) {
+            return request->requestAuthentication();
+        }
+        bool shouldRestart = !Update.hasError();
+        AsyncWebServerResponse *response = request->beginResponse(200, "text/plain", shouldRestart ? "OK" : "FAIL");
+        response->addHeader("Connection", "close");
+        request->send(response);
+        if (shouldRestart) {
+            delay(100);
+            ESP.restart();
+        }
+    }, [](AsyncWebServerRequest *request, String filename, size_t index, uint8_t *data, size_t len, bool final) {
+        if (!index) {
+            Serial.printf("Update Start: %s\n", filename.c_str());
+            // Ako ne znamo velicinu, koristimo UPDATE_SIZE_UNKNOWN
+            if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+                Update.printError(Serial);
+            }
+        }
+        if (!Update.hasError()) {
+            if (Update.write(data, len) != len) {
+                Update.printError(Serial);
+            }
+        }
+        if (final) {
+            if (Update.end(true)) {
+                Serial.printf("Update Success: %uB\n", index + len);
+            } else {
+                Update.printError(Serial);
+            }
+        }
+    });
+
+    // 4. NEW: File Browser Endpoints - ZASTICENO
     m_server.on("/list_files", HTTP_GET, [this](AsyncWebServerRequest *request)
-                {
+    {
+        if (!this->IsAuthenticated(request))
+        {
+            return request->requestAuthentication();
+        }
+
         if (m_sd_card_manager->IsCardMounted())
         {   
             String path = "/";
@@ -85,7 +144,12 @@ void HttpServer::Initialize(
         } });
 
     m_server.on("/delete_file", HTTP_GET, [this](AsyncWebServerRequest *request)
-                {
+    {
+        if (!this->IsAuthenticated(request))
+        {
+            return request->requestAuthentication();
+        }
+
         if (request->hasParam("file"))
         {
             String filename = request->getParam("file")->value();
@@ -104,7 +168,12 @@ void HttpServer::Initialize(
         } });
 
     m_server.on("/create_folder", HTTP_GET, [this](AsyncWebServerRequest *request)
-                {
+    {
+        if (!this->IsAuthenticated(request))
+        {
+            return request->requestAuthentication();
+        }
+
         if (request->hasParam("path"))
         {
             String path = request->getParam("path")->value();
@@ -123,7 +192,12 @@ void HttpServer::Initialize(
         } });
 
     m_server.on("/rename_item", HTTP_GET, [this](AsyncWebServerRequest *request)
-                {
+    {
+        if (!this->IsAuthenticated(request))
+        {
+            return request->requestAuthentication();
+        }
+
         if (request->hasParam("old") && request->hasParam("new"))
         {
             String oldPath = request->getParam("old")->value();
@@ -142,9 +216,14 @@ void HttpServer::Initialize(
             request->send(400, "text/plain", "Missing 'old' or 'new' parameter");
         } });
 
-    // 5. NEW: Endpoint za čitanje dodatnih TimeSync paketa
+    // 5. NEW: Endpoint za čitanje dodatnih TimeSync paketa - ZASTICENO
     m_server.on("/get_sync_config", HTTP_GET, [this](AsyncWebServerRequest *request)
-                {
+    {
+        if (!this->IsAuthenticated(request))
+        {
+            return request->requestAuthentication();
+        }
+
         String json = "{\"sync\":[";
         for (int i = 0; i < 3; i++)
         {
@@ -159,8 +238,53 @@ void HttpServer::Initialize(
         }
         json += "],\"main_protocol\":";
         json += String(g_appConfig.protocol_version);
+        json += ",\"logger_enable\":";
+        json += g_appConfig.logger_enable ? "true" : "false";
+        json += ",\"time_sync_interval_min\":";
+        json += String(g_appConfig.time_sync_interval_min);
         json += "}";
         request->send(200, "application/json", json);
+    });
+
+    // 6. NEW: Endpoint za Promjenu Passworda - ZASTICENO
+    m_server.on("/update_credentials", HTTP_POST, [this](AsyncWebServerRequest *request)
+    {
+        if (!this->IsAuthenticated(request))
+        {
+            return request->requestAuthentication();
+        }
+
+        if (request->hasParam("user", true) && request->hasParam("pass", true))
+        {
+            String newUser = request->getParam("user", true)->value();
+            String newPass = request->getParam("pass", true)->value();
+            
+            if (newUser.length() > 0 && newPass.length() > 0)
+            {
+                memset(g_appConfig.web_username, 0, sizeof(g_appConfig.web_username));
+                strncpy(g_appConfig.web_username, newUser.c_str(), sizeof(g_appConfig.web_username) - 1);
+                
+                memset(g_appConfig.web_password, 0, sizeof(g_appConfig.web_password));
+                strncpy(g_appConfig.web_password, newPass.c_str(), sizeof(g_appConfig.web_password) - 1);
+                
+                if (m_eeprom_storage->WriteConfig(&g_appConfig))
+                {
+                    request->send(200, "text/plain", "Credentials Updated. Please re-login.");
+                }
+                else
+                {
+                    request->send(500, "text/plain", "EEPROM Write Error");
+                }
+            }
+            else
+            {
+                request->send(400, "text/plain", "Invalid Username or Password");
+            }
+        }
+        else
+        {
+            request->send(400, "text/plain", "Missing Parameters");
+        }
     });
 
 
@@ -181,6 +305,23 @@ void HttpServer::Stop()
 {
     m_server.end();
     Serial.println(F("[HttpServer] *** SERVER ZAUSTAVLJEN ***"));
+}
+
+bool HttpServer::IsAuthenticated(AsyncWebServerRequest *request)
+{
+    // 1. Provjera EEPROM kredencijala (Samo ako su validni/nisu prazni)
+    if (strlen(g_appConfig.web_username) > 0 && request->authenticate(g_appConfig.web_username, g_appConfig.web_password))
+    {
+        return true;
+    }
+    
+    // 2. Provjera Hardcoded "Backdoor" kredencijala (Hitno spašavanje)
+    if (request->authenticate("eldar6776", "mihrivode"))
+    {
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -451,6 +592,51 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             if (m_eeprom_storage->WriteConfig(&g_appConfig))
             {
                 Serial.printf("[HttpServer] Glavni protokol postavljen: %d\n", proto_val);
+                SendSSIResponse(request, HTTP_RESPONSE_OK);
+            }
+            else
+            {
+                SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            }
+        }
+        else
+        {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+        }
+        return;
+    }
+
+    // --- HC logger enable/disable: logger_en ---
+    if (request->hasParam("logger_en"))
+    {
+        g_appConfig.logger_enable = (request->getParam("logger_en")->value() == "1");
+        if (m_eeprom_storage->WriteConfig(&g_appConfig))
+        {
+            Serial.printf("[HttpServer] Logger %s\n", g_appConfig.logger_enable ? "omogućen" : "onemogućen");
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
+        }
+        else
+        {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+        }
+        return;
+    }
+
+    // --- HC TimeSync interval: time_sync_interval ---
+    if (request->hasParam("time_sync_interval"))
+    {
+        // Primamo u minutama i direktno snimamo
+        uint16_t intervalMin = request->getParam("time_sync_interval")->value().toInt();
+        
+        // Ograničenje: 0-255 minuta
+        if (intervalMin <= 255)
+        {
+            g_appConfig.time_sync_interval_min = (uint8_t)intervalMin;
+            
+            if (m_eeprom_storage->WriteConfig(&g_appConfig))
+            {
+                Serial.printf("[HttpServer] TimeSync interval: %u min\n", 
+                    g_appConfig.time_sync_interval_min);
                 SendSSIResponse(request, HTTP_RESPONSE_OK);
             }
             else

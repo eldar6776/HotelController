@@ -1,0 +1,11 @@
+potrebno je uraditi doradu koda na način da ćemo na usd kartici imati sada dvije liste CTRL_ADD_L.TXT
+i CTRL_ADD_R.TXT u listi _L će se nalaziti lista kontrolera za lijevu stranu i u _R lista kontrolera za
+desnu stranu. na PCB sam dodao još jedan rs485 konverter i sada imamo dva DE pina za kontrolu ovih konvertera
+potrebno je doraditi logpullmanager na način da prvo skenira jednu listu pa kada završi pređe na drugu ali da
+za _L listu  koristi jedan konverter a za _R listu koristi drugi konverter. dok je u toku tx rx na jednom
+konverteru svo vrijeme DE pin drugog konvertera mora biti na HIGH stanju dakle receiver jednog konvertera
+ne smije uticati na rad drugog konvertera. također je potrebno doraditi inicijalizaciju da učitava obadvije liste
+dodatno treba doraditi i http query da automatski odabere prema adresi sa liste na kojem se konverteru nalazi adresirani 
+kontroler a ako nije ni na jednoj od ove dvije liste ti treba da predložiš neko rješenje ovog slučaja. ako se na kartici
+ne nalaze obadvije liste _R i _L onda uređaj treba da radi sa jednim rs485 konverterom kako je i do sada radio 
+dakle samo sa CTRL_ADD.TXT listom

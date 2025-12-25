@@ -1,0 +1,4 @@
+potrebno je uraditi detaljnu analizu koda esp32 projekta folderi /src i /include i predlođiti doradu koda na način 
+da se jedan od DIN pinova 36 ili 39 koristi kao pullup konfiguracija i kada je u toku boota kontrolera pin na GND 
+pokrenemo wifi u server modu na kojem klijent može pristupiti potpuno istom web interfejsu ako i što je to sada slučaj 
+na ETH interfejsu i na kojem može podesiti postavke uređaja prije svega ip adrese 

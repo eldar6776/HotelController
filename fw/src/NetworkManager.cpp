@@ -269,14 +269,18 @@ void NetworkManager::InitializeETH()
 
         // ISPRAVKA: setHostname se poziva NAKON uspješnog ETH.begin()
         LOG_DEBUG(5, "[NetworkManager] -> Provjeravam mdns_name...\n");
+        Serial.printf("[NetworkManager] DEBUG: g_appConfig.mdns_name = '%s'\n", g_appConfig.mdns_name);
         char safe_hostname[32];
         strncpy(safe_hostname, g_appConfig.mdns_name, sizeof(safe_hostname) - 1);
         safe_hostname[sizeof(safe_hostname) - 1] = '\0';
+        Serial.printf("[NetworkManager] DEBUG: safe_hostname = '%s' (length=%d)\n", safe_hostname, strlen(safe_hostname));
         
         if (strlen(safe_hostname) > 0) {
             ETH.setHostname(safe_hostname);
+            Serial.printf("[NetworkManager] Hostname postavljen na: %s\n", safe_hostname);
             LOG_DEBUG(3, "[NetworkManager] Hostname postavljen na: %s\n", safe_hostname);
         } else {
+            Serial.println("[NetworkManager] UPOZORENJE: Hostname je prazan string!");
             LOG_DEBUG(2, "[NetworkManager] Hostname nije postavljen (prazan string). Preskačem ETH.setHostname().\n");
         }
     }

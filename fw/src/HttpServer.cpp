@@ -346,6 +346,7 @@ void HttpServer::HandleRoot(AsyncWebServerRequest *request)
         if(var == "GW3") return String(g_appConfig.gateway & 0xFF);
         
         if(var == "SYSID") return String(g_appConfig.system_id);
+        if(var == "MDNSNAME") return String(g_appConfig.mdns_name);
 
         return String();
     });
@@ -596,6 +597,90 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             }
             else
             {
+                SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            }
+        }
+        else
+        {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+        }
+        return;
+    }
+
+    // --- HC set system ID (lokalno): sysid ---
+    if (request->hasParam("sysid"))
+    {
+        uint16_t new_sysid = request->getParam("sysid")->value().toInt();
+        if (new_sysid > 0 && new_sysid <= 65000)
+        {
+            Serial.printf("[HttpServer] Promjena lokalnog System ID: %d -> %d\n", g_appConfig.system_id, new_sysid);
+            g_appConfig.system_id = new_sysid;
+            
+            if (m_eeprom_storage->WriteConfig(&g_appConfig)) {
+                SendSSIResponse(request, HTTP_RESPONSE_OK);
+            } else {
+                SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            }
+        }
+        else
+        {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+        }
+        return;
+    }
+
+    // --- HC set mDNS name (lokalno): mdnsname ---
+    Serial.println("[HttpServer] DEBUG: Proveravam mdnsname parametar...");
+    if (request->hasParam("mdnsname"))
+    {
+        Serial.println("[HttpServer] DEBUG: USAO U mdnsname HANDLER!");
+        String new_mdns = request->getParam("mdnsname")->value();
+        Serial.printf("[HttpServer] DEBUG: Primljena vrednost: '%s' (length=%d)\n", new_mdns.c_str(), new_mdns.length());
+        // Validacija: dozvoljavamo alfanumeričke karaktere, crticu i donju crtu (max 16 karaktera)
+        bool valid = true;
+        if (new_mdns.length() > 0 && new_mdns.length() <= 16)
+        {
+            for (size_t i = 0; i < new_mdns.length(); i++)
+            {
+                char c = new_mdns.charAt(i);
+                if (!isalnum(c) && c != '-' && c != '_')
+                {
+                    valid = false;
+                    Serial.printf("[HttpServer] DEBUG: VALIDACIJA PALA - nedozvoljen karakter: '%c' (ASCII=%d)\n", c, (int)c);
+                    break;
+                }
+            }
+            Serial.printf("[HttpServer] DEBUG: Validacija %s\n", valid ? "PROSLA" : "PALA");
+        }
+        else
+        {
+            valid = false;
+            Serial.printf("[HttpServer] DEBUG: Validacija PALA - duzina van opsega: %d\n", new_mdns.length());
+        }
+        
+        if (valid)
+        {
+            Serial.printf("[HttpServer] Promjena mDNS imena: '%s' -> '%s'\n", g_appConfig.mdns_name, new_mdns.c_str());
+            Serial.printf("[HttpServer] DEBUG: Pre snimanja - g_appConfig.mdns_name = '%s'\n", g_appConfig.mdns_name);
+            memset(g_appConfig.mdns_name, 0, sizeof(g_appConfig.mdns_name));
+            strncpy(g_appConfig.mdns_name, new_mdns.c_str(), sizeof(g_appConfig.mdns_name) - 1);
+            Serial.printf("[HttpServer] DEBUG: Posle kopiranja - g_appConfig.mdns_name = '%s'\n", g_appConfig.mdns_name);
+            
+            if (m_eeprom_storage->WriteConfig(&g_appConfig)) {
+                Serial.printf("[HttpServer] DEBUG: EEPROM WriteConfig USPEO!\n");
+                // Primeni mDNS odmah na Ethernet interfejs
+                ETH.setHostname(g_appConfig.mdns_name);
+                Serial.printf("[HttpServer] mDNS ime primenjeno na ETH: %s\n", g_appConfig.mdns_name);
+                
+                // VERIFIKACIJA: Procitaj nazad iz EEPROM-a
+                AppConfig verify_config;
+                if (m_eeprom_storage->ReadConfig(&verify_config)) {
+                    Serial.printf("[HttpServer] DEBUG: Verifikacija - procitano iz EEPROM: '%s'\n", verify_config.mdns_name);
+                }
+                
+                SendSSIResponse(request, HTTP_RESPONSE_OK);
+            } else {
+                Serial.printf("[HttpServer] DEBUG: EEPROM WriteConfig NIJE USPEO!\n");
                 SendSSIResponse(request, HTTP_RESPONSE_ERROR);
             }
         }
@@ -1171,7 +1256,11 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     else if (request->hasParam("cst"))
     {
         targetAddrStr = request->getParam("cst")->value();
-        cmd.cmd_id = GET_APPL_STAT;
+        // HILLS protokol koristi 0x95, ostali protokoli 0xA1
+        if (static_cast<ProtocolVersion>(g_appConfig.protocol_version) == ProtocolVersion::HILLS)
+            cmd.cmd_id = RUBICON_GET_ROOM_STATUS;  // 0x95
+        else
+            cmd.cmd_id = GET_APPL_STAT;  // 0xA1
         is_blocking = true;
     }
     // --- RC preview display image: ipr ---
@@ -1320,19 +1409,22 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         uint8_t response_buffer[MAX_PACKET_LENGTH];
         memset(response_buffer, 0, MAX_PACKET_LENGTH);
 
-        if (m_http_query_manager->ExecuteBlockingQuery(&cmd, response_buffer))
+        int payload_len = m_http_query_manager->ExecuteBlockingQuery(&cmd, response_buffer);
+        if (payload_len > 0)
         {
-            // Upit je uspio, proslijedi stvarni odgovor ili "OK" ako je odgovor prazan.
-            String response_str((char*)response_buffer);
-            if (response_str.length() == 0) response_str = HTTP_RESPONSE_OK; // Fallback ako je odgovor prazan
-            
-            SendSSIResponse(request, response_str); // Proslijedi stvarni odgovor
+            // Upit je uspio, proslijedi stvarni odgovor
+            // VAŽNO: Payload može sadržati null bajtove, pa koristimo eksplicitnu dužinu
+            String response_str((char*)response_buffer, payload_len);
+            SendSSIResponse(request, response_str);
+        }
+        else if (payload_len == 0)
+        {
+            // Prazan odgovor - možda je validno za neke komande
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
         }
         else
         {
-            // =================================================================================
-            // KLJUČNA ISPRAVKA: Ako upit ne uspije (timeout), pošalji "TIMEOUT" odgovor.
-            // =================================================================================
+            // Timeout ili greška (payload_len == -1)
             SendSSIResponse(request, HTTP_RESPONSE_TIMEOUT);
         }
     }

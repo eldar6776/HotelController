@@ -183,6 +183,9 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <hr>
         Sistem ID:..........<input id="kont580" value="%SYSID%" type="number" min="1" max="65000">
         <input value="Promjena ID sistema" type="button" onclick="send_event(581)">
+        <hr>
+        mDNS Ime............<input id="kont582" value="%MDNSNAME%" type="text" maxlength="16" style="width: 180px;" placeholder="max 16 karaktera">
+        <input value="Promjena mDNS Imena" type="button" onclick="send_event(582)">
     </div>
     <hr>
     
@@ -751,6 +754,9 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         }
         else if (t == "581") {
             htt = "sysctrl.cgi?sid=HCifa&nid=" + document.getElementById("kont580").value;
+        }
+        else if (t == "582") {
+            htt = "sysctrl.cgi?mdnsname=" + encodeURIComponent(document.getElementById("kont582").value);
         }
         else if (t == "600") { // Snimanje dodatnih sync paketa
             htt = "sysctrl.cgi?set_add_sync=1";

@@ -57,6 +57,7 @@ uint16_t HttpQueryManager::CreateRs485Packet(HttpCommand* cmd, uint8_t* buffer)
     {
         // Komande sa 1 bajtom (samo CMD)
         case GET_APPL_STAT:
+        case RUBICON_GET_ROOM_STATUS:  // 0x95 za HILLS protokol
         case RESET_SOS_ALARM:
         case RESTART_CTRL:
         case GET_LOG_LIST:
@@ -209,8 +210,9 @@ uint16_t HttpQueryManager::CreateRs485Packet(HttpCommand* cmd, uint8_t* buffer)
 
 /**
  * @brief BLOKIRAJUCA funkcija. Ceka dok RS485 ne zavrsi.
+ * @return Payload length (broj bajtova), ili -1 ako je greška/timeout
  */
-bool HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBuffer)
+int HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBuffer)
 {    
     LOG_DEBUG(4, "[HttpQuery] Primljen zahtev za komandu 0x%X na adresu 0x%X\n", cmd->cmd_id, cmd->address);
 
@@ -222,7 +224,7 @@ bool HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseB
     if (!m_rs485_service->SendPacket(packet, length))
     {
         LOG_DEBUG(1, "[HttpQuery] GRESKA: SendPacket nije uspio.\n");
-        return false;
+        return -1;  // Greška slanja
     }
 
     // Čekaj odgovor
@@ -231,36 +233,39 @@ bool HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseB
     if (response_len > 0)
     {
         LOG_DEBUG(4, "[HttpQuery] Primljen odgovor. Dužina: %d\n", response_len);
-        // Parsiranje odgovora
+        // Parsiranje odgovora - identično kao u starom kodu (httpd_cgi_ssi.c linija 143)
         if (response_len >= 9)
         {
             uint16_t data_field_len = responseBuffer[5];
             if (data_field_len >= 2 && (data_field_len + 7) <= response_len)
             {
-                uint16_t payload_len = data_field_len - 2; // Tačna logika iz starog koda
-                // Premjestimo payload na početak bafera za pozivaoca
+                // data_field_len = CMD (1 bajt) + DATA (n bajtova), CRC je van data_field_len
+                // Payload je samo DATA, pa treba oduzeti CMD (1 bajt)
+                uint16_t payload_len = data_field_len - 1;
                 memmove(responseBuffer, &responseBuffer[7], payload_len);
-                responseBuffer[payload_len] = '\0'; // Osiguraj null-terminator
+                responseBuffer[payload_len] = '\0';
+                return payload_len;
             }
             else
             {
                 strcpy((char*)responseBuffer, "OK");
+                return 2;
             }
         }
         else
         {
             strcpy((char*)responseBuffer, "ERROR");
+            return 5;  // "ERROR" je 5 bajtova
         }
-        return true;
     }
     else if (response_len == 0)
     {
         LOG_DEBUG(2, "[HttpQuery] TIMEOUT. Nije primljen odgovor na komandu.\n");
-        return false;
+        return -1;  // Timeout
     }
     else // response_len < 0
     {
         LOG_DEBUG(1, "[HttpQuery] GRESKA: Prijemni bafer je pun (overflow).\n");
-        return false;
+        return -1;  // Greška
     }
 }

@@ -20,7 +20,8 @@
 
 // Komande (preuzete iz httpd_cgi_ssi.c i hotel_ctrl.c)
 #define RESTART_CTRL 0xC0 // (rst)
-#define GET_APPL_STAT 0xA1 // (cst)
+#define GET_APPL_STAT 0xA1 // (cst) - Standardni protokoli
+#define RUBICON_GET_ROOM_STATUS 0x95 // (cst) - HILLS protokol
 #define SET_APPL_STAT 0xD5 // (stg)
 #define SET_ROOM_TEMP 0xD6 // (tha)
 #define RESET_SOS_ALARM 0xD4 // (rud)
@@ -71,8 +72,9 @@ public:
 
     /**
      * @brief Glavna funkcija koju poziva HttpServer. Sada je BLOKIRAJUĆA.
+     * @return Payload length (broj bajtova u responseBuffer), ili -1 ako je greška/timeout
      */
-    bool ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBuffer);
+    int ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBuffer);
 
 private:
     Rs485Service* m_rs485_service;

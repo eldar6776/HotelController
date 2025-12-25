@@ -32,7 +32,7 @@ extern AppConfig g_appConfig;
 extern NetworkManager g_networkManager; // Potrebno za Eth/RS485 restart
 extern FirmwareUpdateManager g_fufUpdateManager; // NOVO
 
-HttpServer::HttpServer() : m_server(80)
+HttpServer::HttpServer() : m_server(HTTP_PORT)
 {
     // Konstruktor
 }
@@ -630,7 +630,6 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
     }
 
     // --- HC set mDNS name (lokalno): mdnsname ---
-    Serial.println("[HttpServer] DEBUG: Proveravam mdnsname parametar...");
     if (request->hasParam("mdnsname"))
     {
         Serial.println("[HttpServer] DEBUG: USAO U mdnsname HANDLER!");

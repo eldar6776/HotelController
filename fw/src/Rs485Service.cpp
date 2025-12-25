@@ -22,8 +22,8 @@ Rs485Service::Rs485Service() : m_rs485_serial(2) // Koristi UART2 (Serial2)
 void Rs485Service::Initialize()
 {
     Serial.println(F("[Rs485Service] Inicijalizacija..."));
-    pinMode(RS485_DE_PIN, OUTPUT);
-    digitalWrite(RS485_DE_PIN, LOW); // Postavi na RX (prijem)
+    pinMode(RS485_DE_PIN1, OUTPUT);
+    digitalWrite(RS485_DE_PIN1, LOW); // Postavi na RX (prijem)
 
     m_rs485_serial.begin(RS485_BAUDRATE, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
 }
@@ -215,14 +215,14 @@ bool Rs485Service::SendPacket(const uint8_t* data, uint16_t length)
 
     LOG_DEBUG(4, "[Rs485] Slanje paketa -> Dužina: %d, Sadržaj: %02X %02X %02X %02X %02X %02X %02X...\n", length, data[0], data[1], data[2], data[3], data[4], data[5], data[6]);
 
-    digitalWrite(RS485_DE_PIN, HIGH); 
+    digitalWrite(RS485_DE_PIN1, HIGH); 
     delayMicroseconds(50); 
 
     m_rs485_serial.write(data, length);
     m_rs485_serial.flush(); 
     
     delayMicroseconds(50);
-    digitalWrite(RS485_DE_PIN, LOW); 
+    digitalWrite(RS485_DE_PIN1, LOW); 
 
     return true;
 }

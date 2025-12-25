@@ -277,7 +277,6 @@ void NetworkManager::InitializeETH()
         
         if (strlen(safe_hostname) > 0) {
             ETH.setHostname(safe_hostname);
-            Serial.printf("[NetworkManager] Hostname postavljen na: %s\n", safe_hostname);
             LOG_DEBUG(3, "[NetworkManager] Hostname postavljen na: %s\n", safe_hostname);
         } else {
             Serial.println("[NetworkManager] UPOZORENJE: Hostname je prazan string!");

@@ -79,6 +79,20 @@ public:
 private:
     Rs485Service* m_rs485_service;
     uint16_t CreateRs485Packet(HttpCommand* cmd, uint8_t* buffer);
+    
+    /**
+     * @brief Provjerava da li je protokol za određeni bus HILLS.
+     * @param bus_id ID bus-a (0 = Lijevi, 1 = Desni)
+     * @return true ako je HILLS protokol, false inače
+     */
+    bool IsHillsProtocolForBus(int8_t bus_id);
+    
+    /**
+     * @brief Adaptira cmd_id za protokol na odgovarajućem bus-u.
+     * @param cmd Komanda koja se šalje
+     * @param bus_id ID bus-a na koji se šalje
+     */
+    void AdaptCommandForProtocol(HttpCommand* cmd, int8_t bus_id);
 };
 
 #endif // HTTP_QUERY_MANAGER_H

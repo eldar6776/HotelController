@@ -154,6 +154,24 @@ void EepromStorage::MigrateConfig(uint16_t oldVersion)
     }
     
     // ========================================================================
+    // NOVO: Mixed Protocol Support (dodato u istoj verziji kao Dual Bus)
+    // ========================================================================
+    
+    // Migracija: Kopiraj staru protocol_version u protocol_version_L i protocol_version_R
+    // ako su nove varijable nedefinirane (0 ili 0xFF)
+    if (g_appConfig.protocol_version_L == 0 || g_appConfig.protocol_version_L == 0xFF)
+    {
+        g_appConfig.protocol_version_L = g_appConfig.protocol_version;
+        LOG_DEBUG(2, "[Eeprom] Migrirano protocol_version_L <- %d (iz starog protocol_version)\n", g_appConfig.protocol_version);
+    }
+    
+    if (g_appConfig.protocol_version_R == 0 || g_appConfig.protocol_version_R == 0xFF)
+    {
+        g_appConfig.protocol_version_R = g_appConfig.protocol_version;
+        LOG_DEBUG(2, "[Eeprom] Migrirano protocol_version_R <- %d (iz starog protocol_version)\n", g_appConfig.protocol_version);
+    }
+    
+    // ========================================================================
     // TEMPLATE ZA BUDUĆA POLJA - kopiraj i prilagodi:
     // ========================================================================
     
@@ -259,8 +277,12 @@ void EepromStorage::LoadDefaultConfig()
     
     // 10. NEW: Dual Bus Mode (default: onemogućen - single bus mode)
     g_appConfig.enable_dual_bus_mode = false;
+    
+    // 11. NEW: Mixed Protocol Support (default: oba HILLS)
+    g_appConfig.protocol_version_L = static_cast<uint8_t>(ProtocolVersion::HILLS);
+    g_appConfig.protocol_version_R = static_cast<uint8_t>(ProtocolVersion::HILLS);
 
-    // 11. Snimi nove (defaultne) vrijednosti u EEPROM
+    // 12. Snimi nove (defaultne) vrijednosti u EEPROM
     if (WriteConfig(&g_appConfig))
     {
         LOG_DEBUG(3, "[Eeprom] Podrazumijevane vrijednosti uspješno snimljene u EEPROM.\n");

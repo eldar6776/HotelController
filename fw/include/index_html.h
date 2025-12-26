@@ -96,19 +96,66 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     <!-- Protokol i Sync -->
     <div class="file-section">
         <h3>Podešavanje Protokola</h3>
-        Glavni protokol sistema:
-        <select id="kont110" name="main_protocol">
-            <option value="0">Hills</option>
-            <option value="1" selected>Bjelašnica</option>
-            <option value="2">Saplast</option>
-            <option value="3">Boss</option>
-            <option value="4">Vučko</option>
-            <option value="5">ULM</option>
-            <option value="6">Vrata Bosne</option>
-            <option value="7">Baškuća</option>
-            <option value="8">Džafić</option>
-            <option value="9">Sax</option>
-        </select>
+        
+        <!-- Mixed Protocol Support -->
+        <div style="margin-bottom: 15px;">
+            <label>
+                <input type="checkbox" id="use_mixed_proto" onchange="toggleMixedProtocol()">
+                Koristi različite protokole za Lijevi i Desni bus
+            </label>
+        </div>
+        
+        <!-- Single Protocol Mode (default) -->
+        <div id="single_proto_section">
+            Glavni protokol sistema:
+            <select id="kont110" name="main_protocol" onchange="syncProtocols()">
+                <option value="0">Hills</option>
+                <option value="1" selected>Bjelašnica</option>
+                <option value="2">Saplast</option>
+                <option value="3">Boss</option>
+                <option value="4">Vučko</option>
+                <option value="5">ULM</option>
+                <option value="6">Vrata Bosne</option>
+                <option value="7">Baškuća</option>
+                <option value="8">Džafić</option>
+                <option value="9">Sax</option>
+            </select>
+        </div>
+        
+        <!-- Dual Protocol Mode (hidden by default) -->
+        <div id="dual_proto_section" style="display: none;">
+            <div style="margin-bottom: 10px;">
+                Protokol Lijevi bus (L):
+                <select id="proto_l">
+                    <option value="0">Hills</option>
+                    <option value="1">Bjelašnica</option>
+                    <option value="2">Saplast</option>
+                    <option value="3">Boss</option>
+                    <option value="4">Vučko</option>
+                    <option value="5">ULM</option>
+                    <option value="6">Vrata Bosne</option>
+                    <option value="7">Baškuća</option>
+                    <option value="8">Džafić</option>
+                    <option value="9">Sax</option>
+                </select>
+            </div>
+            <div>
+                Protokol Desni bus (R):
+                <select id="proto_r">
+                    <option value="0">Hills</option>
+                    <option value="1">Bjelašnica</option>
+                    <option value="2">Saplast</option>
+                    <option value="3">Boss</option>
+                    <option value="4">Vučko</option>
+                    <option value="5">ULM</option>
+                    <option value="6">Vrata Bosne</option>
+                    <option value="7">Baškuća</option>
+                    <option value="8">Džafić</option>
+                    <option value="9">Sax</option>
+                </select>
+            </div>
+        </div>
+        
         <input value="Snimi Protokol" type="button" onclick="send_event(111)">
     </div>
     <hr>
@@ -702,8 +749,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             var intervalMin = document.getElementById("time_sync_interval").value;
             htt = "sysctrl.cgi?time_sync_interval=" + intervalMin;
         }
-        else if (t == "111") { // Snimanje glavnog protokola
-            htt = "sysctrl.cgi?set_proto=" + document.getElementById("kont110").value;
+        else if (t == "111") { // Snimanje protokola (mixed ili single)
+            var protoL = document.getElementById("proto_l").value;
+            var protoR = document.getElementById("proto_r").value;
+            htt = "sysctrl.cgi?protoL=" + protoL + "&protoR=" + protoR;
         }
         else if (t == "301") {
             htt = "sysctrl.cgi?cst=" + document.getElementById("kont101").value;
@@ -798,10 +847,23 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         fetch('/get_sync_config')
             .then(response => response.json())
             .then(data => {
-                // Postavi glavni protokol
-                const mainProtoSelect = document.getElementById('kont110');
-                if (mainProtoSelect && data.main_protocol !== undefined) {
-                    mainProtoSelect.value = data.main_protocol;
+                // Postavi protocol_L i protocol_R
+                const protoL = data.protocol_L !== undefined ? data.protocol_L : data.main_protocol;
+                const protoR = data.protocol_R !== undefined ? data.protocol_R : data.main_protocol;
+                
+                document.getElementById('proto_l').value = protoL;
+                document.getElementById('proto_r').value = protoR;
+                
+                // Provjeri da li su protokoli različiti
+                if (protoL === protoR) {
+                    // Single protocol mode
+                    document.getElementById('use_mixed_proto').checked = false;
+                    document.getElementById('kont110').value = protoL;
+                    toggleMixedProtocol(); // Ažuriraj UI
+                } else {
+                    // Mixed protocol mode
+                    document.getElementById('use_mixed_proto').checked = true;
+                    toggleMixedProtocol(); // Ažuriraj UI
                 }
 
                 // Postavi dodatne TimeSync pakete
@@ -834,6 +896,35 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 }
             })
             .catch(error => console.error('Error loading sync config:', error));
+    }
+    
+    // Mixed Protocol Toggle funkcija
+    function toggleMixedProtocol() {
+        const useMixed = document.getElementById('use_mixed_proto').checked;
+        const singleSection = document.getElementById('single_proto_section');
+        const dualSection = document.getElementById('dual_proto_section');
+        
+        if (useMixed) {
+            // Mixed mode - prikaži dual protokol sekciju
+            singleSection.style.display = 'none';
+            dualSection.style.display = 'block';
+        } else {
+            // Single mode - prikaži glavni protokol
+            singleSection.style.display = 'block';
+            dualSection.style.display = 'none';
+            // Sinhronizuj L i R sa glavnim
+            syncProtocols();
+        }
+    }
+    
+    // Sinkronizacija protokola kada je single mode aktivan
+    function syncProtocols() {
+        const useMixed = document.getElementById('use_mixed_proto').checked;
+        if (!useMixed) {
+            const mainProto = document.getElementById('kont110').value;
+            document.getElementById('proto_l').value = mainProto;
+            document.getElementById('proto_r').value = mainProto;
+        }
     }
 
     // Inicijalizacija na učitavanju stranice

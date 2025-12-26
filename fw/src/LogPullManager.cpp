@@ -93,11 +93,30 @@ void LogPullManager::Initialize(Rs485Service* pRs485Service, EepromStorage* pEep
 }
 
 /**
- * @brief Provjerava da li je HILLS protokol aktivan.
+ * @brief Provjerava da li je HILLS protokol aktivan za trenutnu adresu.
  */
 bool LogPullManager::IsHillsProtocol()
 {
-    return (static_cast<ProtocolVersion>(g_appConfig.protocol_version) == ProtocolVersion::HILLS);
+    // KRITIČNO: NE koristiti m_current_bus jer se mijenja prerano u GetNextAddress()!
+    // Umjesto toga, odredi protokol na osnovu ADRESE koja se trenutno polluje
+    uint8_t current_protocol;
+    
+    if (g_appConfig.enable_dual_bus_mode) {
+        int8_t bus_id = GetBusForAddress(m_current_pull_address);
+        if (bus_id == 0) {
+            current_protocol = g_appConfig.protocol_version_L;
+        } else if (bus_id == 1) {
+            current_protocol = g_appConfig.protocol_version_R;
+        } else {
+            // Fallback ako adresa nije u listama (ne bi se smjelo desiti)
+            current_protocol = g_appConfig.protocol_version_L;
+        }
+    } else {
+        // Single bus mode
+        current_protocol = g_appConfig.protocol_version_L;
+    }
+    
+    return (static_cast<ProtocolVersion>(current_protocol) == ProtocolVersion::HILLS);
 }
 
 /**

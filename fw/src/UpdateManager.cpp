@@ -12,7 +12,8 @@
 #include "UpdateManager.h"
 #include "ProjectConfig.h" 
 #include "TimeSync.h"
-#include "HttpServer.h"  // NAKON ostalih da izbjegnemo FILE_READ konflikt
+#include "LogPullManager.h"  // DODATO: Za GetBusForAddress()
+#include "HttpServer.h"      // NAKON ostalih da izbjegnemo FILE_READ konflikt
 #include <cstring>
 
 // HttpServer.h može da override-uje FILE_READ macro, pa ga eksplicitno definišemo
@@ -21,7 +22,10 @@
 #endif
 
 // Globalna konfiguracija (extern)
-extern AppConfig g_appConfig; 
+extern AppConfig g_appConfig;
+
+// Extern za LogPullManager (za routing po adresi)
+extern LogPullManager* g_logPullManager_ptr; 
 
 // ============================================================================
 // --- STM32 CRC32 HARDWARE-LIKE SOFTWARE IMPLEMENTATION ---
@@ -77,16 +81,35 @@ void UpdateManager::Initialize(Rs485Service* pRs485Service, SdCardManager* pSdCa
 }
 
 /**
- * @brief Vraća veličinu chunk-a (payload) za trenutni protokol.
+ * @brief Vraća veličinu chunk-a (payload) za protokol na određenom bus-u.
  * @details STARI protokol (HILLS/SAX/BJELASNICA/SAPLAST/BOSS/BASKUCA): 64 bajta
- *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): 128 bajtova (default)
+ *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): 128 bajtova
+ * @param address Adresa kontrolera (koristi se za lookup bus-a)
  * @return Veličina chunk-a u bajtovima (64 ili 128)
  * @note OVO SE ODNOSI SAMO NA UPDATE FAJLOVA, NE NA TRANSFER LOGOVA
  */
-uint16_t UpdateManager::GetChunkSizeForProtocol()
+uint16_t UpdateManager::GetChunkSizeForProtocol(uint16_t address)
 {
-    ProtocolVersion proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version);
+    // Odredi protokol na osnovu adrese i dual-bus konfiguracije
+    ProtocolVersion proto;
     
+    if (g_appConfig.enable_dual_bus_mode && g_logPullManager_ptr != NULL) {
+        int8_t bus = g_logPullManager_ptr->GetBusForAddress(address);
+        if (bus == 0) {
+            proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_L);
+        } else if (bus == 1) {
+            proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_R);
+        } else {
+            // Fallback: adresa nije u listama (ne bi se trebalo desiti jer StartSession odbija)
+            // Koristi protocol_version_L kao sigurnu opciju
+            proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_L);
+        }
+    } else {
+        // Single/Global bus mode - koristi protocol_version_L (koji je jednak protocol_version_R)
+        proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_L);
+    }
+    
+    // EKSPLICITNA LISTA SVIH PROTOKOLA (bez default)
     switch (proto)
     {
         // GRUPA 1 - STARI PROTOKOL (64-bajtni chunk)
@@ -96,29 +119,50 @@ uint16_t UpdateManager::GetChunkSizeForProtocol()
         case ProtocolVersion::SAX:
         case ProtocolVersion::BOSS:
         case ProtocolVersion::BASKUCA:
+        case ProtocolVersion::DZAFIC:
             return 64;  // STARI protokol - manji chunk
         
-        // GRUPA 2 - NOVI PROTOKOL (128-bajtni chunk) - TRENUTNO STANJE PROJEKTA
+        // GRUPA 2 - NOVI PROTOKOL (128-bajtni chunk)
         case ProtocolVersion::VUCKO:
         case ProtocolVersion::ULM:
         case ProtocolVersion::VRATA_BOSNE:
-        case ProtocolVersion::DZAFIC:
-        default:
-            return 128; // NOVI protokol - kako projekat trenutno radi
+            return 128; // NOVI protokol - veći chunk
     }
+    
+    // Fallback ako se doda novi protokol koji nije na listi
+    return 64; // Konzervativan pristup - manji chunk
 }
 
 /**
- * @brief Vraća timeout za čekanje odgovora tokom update-a za trenutni protokol.
+ * @brief Vraća timeout za čekanje odgovora tokom update-a za protokol na određenom bus-u.
  * @details STARI protokol (HILLS/SAX/BJELASNICA/SAPLAST/BOSS/BASKUCA): 78ms
- *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): 45ms (default)
+ *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): 45ms
+ * @param address Adresa kontrolera (koristi se za lookup bus-a)
  * @return Timeout u milisekundama (78 ili 45)
  * @note OVO SE ODNOSI SAMO NA UPDATE FAJLOVA, NE NA TRANSFER LOGOVA
  */
-uint32_t UpdateManager::GetUpdateTimeoutForProtocol()
+uint32_t UpdateManager::GetUpdateTimeoutForProtocol(uint16_t address)
 {
-    ProtocolVersion proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version);
+    // Odredi protokol na osnovu adrese i dual-bus konfiguracije
+    ProtocolVersion proto;
     
+    if (g_appConfig.enable_dual_bus_mode && g_logPullManager_ptr != NULL) {
+        int8_t bus = g_logPullManager_ptr->GetBusForAddress(address);
+        if (bus == 0) {
+            proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_L);
+        } else if (bus == 1) {
+            proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_R);
+        } else {
+            // Fallback: adresa nije u listama (ne bi se trebalo desiti jer StartSession odbija)
+            // Koristi protocol_version_L kao sigurnu opciju
+            proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_L);
+        }
+    } else {
+        // Single/Global bus mode - koristi protocol_version_L (koji je jednak protocol_version_R)
+        proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_L);
+    }
+    
+    // EKSPLICITNA LISTA SVIH PROTOKOLA (bez default)
     switch (proto)
     {
         // GRUPA 1 - STARI PROTOKOL (duži timeout)
@@ -128,29 +172,50 @@ uint32_t UpdateManager::GetUpdateTimeoutForProtocol()
         case ProtocolVersion::SAX:
         case ProtocolVersion::BOSS:
         case ProtocolVersion::BASKUCA:
+        case ProtocolVersion::DZAFIC:
             return 78;  // STARI protokol - duži timeout
         
-        // GRUPA 2 - NOVI PROTOKOL (kraći timeout) - TRENUTNO STANJE PROJEKTA
+        // GRUPA 2 - NOVI PROTOKOL (kraći timeout)
         case ProtocolVersion::VUCKO:
         case ProtocolVersion::ULM:
         case ProtocolVersion::VRATA_BOSNE:
-        case ProtocolVersion::DZAFIC:
-        default:
-            return 45;  // NOVI protokol - kako projekat trenutno radi
+            return 45;  // NOVI protokol - kraći timeout
     }
+    
+    // Fallback ako se doda novi protokol koji nije na listi
+    return 78; // Konzervativan pristup - duži timeout
 }
 
 /**
- * @brief Provjerava da li trenutni protokol koristi single-byte ACK/NAK odgovore.
+ * @brief Provjerava da li protokol na određenom bus-u koristi single-byte ACK/NAK odgovore.
  * @details STARI protokol (HILLS/SAX/BJELASNICA/SAPLAST/BOSS/BASKUCA): true (1 bajt ACK/NAK)
  *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): false (puni ACK paket sa headerom)
+ * @param address Adresa kontrolera (koristi se za lookup bus-a)
  * @return true ako protokol koristi single-byte ACK/NAK, false inače
  * @note OVO SE ODNOSI SAMO NA UPDATE FAJLOVA, NE NA TRANSFER LOGOVA
  */
-bool UpdateManager::UseSingleByteAckForProtocol()
+bool UpdateManager::UseSingleByteAckForProtocol(uint16_t address)
 {
-    ProtocolVersion proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version);
+    // Odredi protokol na osnovu adrese i dual-bus konfiguracije
+    ProtocolVersion proto;
     
+    if (g_appConfig.enable_dual_bus_mode && g_logPullManager_ptr != NULL) {
+        int8_t bus = g_logPullManager_ptr->GetBusForAddress(address);
+        if (bus == 0) {
+            proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_L);
+        } else if (bus == 1) {
+            proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_R);
+        } else {
+            // Fallback: adresa nije u listama (ne bi se trebalo desiti jer StartSession odbija)
+            // Koristi protocol_version_L kao sigurnu opciju
+            proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_L);
+        }
+    } else {
+        // Single/Global bus mode - koristi protocol_version_L (koji je jednak protocol_version_R)
+        proto = static_cast<ProtocolVersion>(g_appConfig.protocol_version_L);
+    }
+    
+    // EKSPLICITNA LISTA SVIH PROTOKOLA (bez default)
     switch (proto)
     {
         // GRUPA 1 - STARI PROTOKOL (single-byte ACK/NAK)
@@ -160,16 +225,18 @@ bool UpdateManager::UseSingleByteAckForProtocol()
         case ProtocolVersion::SAX:
         case ProtocolVersion::BOSS:
         case ProtocolVersion::BASKUCA:
+        case ProtocolVersion::DZAFIC:
             return true;   // STARI protokol - ACK/NAK kao 1 bajt
         
-        // GRUPA 2 - NOVI PROTOKOL (puni ACK paket) - TRENUTNO STANJE PROJEKTA
+        // GRUPA 2 - NOVI PROTOKOL (puni ACK paket)
         case ProtocolVersion::VUCKO:
         case ProtocolVersion::ULM:
         case ProtocolVersion::VRATA_BOSNE:
-        case ProtocolVersion::DZAFIC:
-        default:
-            return false;  // NOVI protokol - kako projekat trenutno radi
+            return false;  // NOVI protokol - puni ACK paket
     }
+    
+    // Fallback ako se doda novi protokol koji nije na listi
+    return true; // Konzervativan pristup - single-byte ACK
 }
 
 uint32_t UpdateManager::CalculateCRC32(File& file)
@@ -360,6 +427,27 @@ bool UpdateManager::StartSession(uint8_t clientAddress, uint8_t updateCmd)
         return false;
     }
 
+    // =================================================================================
+    // DUAL PROTOCOL MODE: Provjera da li je adresa u listama
+    // =================================================================================
+    if (g_appConfig.enable_dual_bus_mode && g_logPullManager_ptr != NULL)
+    {
+        int8_t bus = g_logPullManager_ptr->GetBusForAddress(clientAddress);
+        if (bus == -1)
+        {
+            Serial.printf("[UpdateManager] GREŠKA: U DUAL PROTOCOL MODE-u adresa 0x%X nije u ni jednoj listi!\n", clientAddress);
+            Serial.println(F("[UpdateManager] Update ODBIJEN - nepoznat protokol za ovu adresu."));
+            return false; // ODBIJ update ako ne znamo protokol
+        }
+        Serial.printf("[UpdateManager] Dual mode: Adresa 0x%X -> Bus %d\n", clientAddress, bus);
+    }
+    else
+    {
+        // SINGLE/GLOBAL PROTOCOL MODE: Bilo koja adresa može da se update-uje
+        Serial.printf("[UpdateManager] Single/Global mode: Update adrese 0x%X (protokol poznat)\n", clientAddress);
+    }
+    // =================================================================================
+
     // ZAUSTAVI SERVER!
     if (m_http_server) m_http_server->Stop();
 
@@ -378,7 +466,7 @@ bool UpdateManager::StartSession(uint8_t clientAddress, uint8_t updateCmd)
     // KRITIČNO: Aktiviraj single-byte mod ako je STARI protokol
     // Ovo omogućava Rs485Service da prihvati single-byte ACK/NAK
     // =================================================================================
-    if (UseSingleByteAckForProtocol())
+    if (UseSingleByteAckForProtocol(clientAddress))
     {
         m_rs485_service->EnableSingleByteMode();
         Serial.println(F("[UpdateManager] STARI protokol detektovan - single-byte mod aktiviran"));
@@ -474,7 +562,7 @@ void UpdateManager::Run()
                     response_timeout = (m_session.type == TYPE_FW_RC || m_session.type == TYPE_BLDR_RC) ? IMG_COPY_DEL : FWR_COPY_DEL;
                 } else {
                     // PROMJENA: Koristi dinamički timeout za update umjesto hardkodirane konstante
-                    response_timeout = GetUpdateTimeoutForProtocol(); // 78ms (stari) ili 45ms (novi)
+                    response_timeout = GetUpdateTimeoutForProtocol(m_session.clientAddress); // 78ms (stari) ili 45ms (novi)
                 }
                 break;
 
@@ -558,7 +646,7 @@ void UpdateManager::ProcessResponse(const uint8_t* packet, uint16_t length)
     // --- KRITIČNA PROVJERA: STARI PROTOKOL (SAX/HILLS/itd) KORISTI SINGLE-BYTE ACK/NAK ---
     // Ako je protokol postavljen na STARI i stigao je 1 bajt, to je VALIDNI odgovor!
     // =================================================================================
-    if (UseSingleByteAckForProtocol() && length == 1)
+    if (UseSingleByteAckForProtocol(m_session.clientAddress) && length == 1)
     {
         uint8_t single_byte = packet[0];
         Serial.printf("  -> STARI PROTOKOL: Single-byte odgovor: 0x%02X ", single_byte);
@@ -798,7 +886,7 @@ void UpdateManager::SendFirmwareStartRequest()
         packet[6] = CMD_DWNLD_FWR_IMG; // U starom kodu je ovo bio DWNLD_FWR
         
         // PROMJENA: Koristi dinamički chunk size za update umjesto hardkodirane konstante
-        uint16_t chunk_size = GetChunkSizeForProtocol(); // 64 (stari) ili 128 (novi)
+        uint16_t chunk_size = GetChunkSizeForProtocol(s->clientAddress); // 64 (stari) ili 128 (novi)
         uint16_t total_packets = (s->fw_size + chunk_size - 1) / chunk_size;
         packet[7] = (total_packets >> 8) & 0xFF;
         packet[8] = total_packets & 0xFF;
@@ -873,7 +961,7 @@ void UpdateManager::SendFileStartRequest()
     packet[6] = sub_cmd;
 
     // PROMJENA: Koristi dinamički chunk size za update umjesto hardkodirane konstante
-    uint16_t chunk_size = GetChunkSizeForProtocol(); // 64 (stari) ili 128 (novi)
+    uint16_t chunk_size = GetChunkSizeForProtocol(s->clientAddress); // 64 (stari) ili 128 (novi)
     uint16_t total_packets = (s->fw_size + chunk_size - 1) / chunk_size;
     packet[7] = (total_packets >> 8) & 0xFF;
     packet[8] = total_packets & 0xFF;
@@ -927,7 +1015,7 @@ void UpdateManager::SendDataPacket()
     Serial.printf("[UpdateManager] -> Šaljem DATA paket #%lu...\n", m_session.currentSequenceNum);
     UpdateSession* s = &m_session;
     // PROMJENA: Koristi dinamički chunk size za update umjesto hardkodirane konstante
-    uint16_t chunk_size = GetChunkSizeForProtocol(); // 64 (stari) ili 128 (novi)
+    uint16_t chunk_size = GetChunkSizeForProtocol(s->clientAddress); // 64 (stari) ili 128 (novi)
     int16_t bytes_read = s->fw_file.read(s->read_buffer, chunk_size);
     
     if (bytes_read <= 0)

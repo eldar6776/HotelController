@@ -238,6 +238,10 @@ void HttpServer::Initialize(
         }
         json += "],\"main_protocol\":";
         json += String(g_appConfig.protocol_version);
+        json += ",\"protocol_L\":";
+        json += String(g_appConfig.protocol_version_L);
+        json += ",\"protocol_R\":";
+        json += String(g_appConfig.protocol_version_R);
         json += ",\"logger_enable\":";
         json += g_appConfig.logger_enable ? "true" : "false";
         json += ",\"time_sync_interval_min\":";
@@ -560,16 +564,19 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         return;
     }
 
-    // --- NEW: HC set protocol version: proto ---
+    // --- NEW: HC set protocol version: proto (DEPRECATED - koristi protoL/protoR) ---
     if (request->hasParam("proto"))
     {
         uint8_t proto_val = request->getParam("proto")->value().toInt();
         if (proto_val <= static_cast<uint8_t>(ProtocolVersion::SAX)) // Validate enum range
         {
+            // Za backward compatibility - postavi oba protokola na istu vrijednost
             g_appConfig.protocol_version = proto_val;
+            g_appConfig.protocol_version_L = proto_val;
+            g_appConfig.protocol_version_R = proto_val;
             if (m_eeprom_storage->WriteConfig(&g_appConfig))
             {
-                Serial.printf("[HttpServer] Postavljena verzija protokola: %d\n", proto_val);
+                Serial.printf("[HttpServer] Postavljena verzija protokola: %d (L i R)\n", proto_val);
                 SendSSIResponse(request, HTTP_RESPONSE_OK);
             }
             else
@@ -584,13 +591,47 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         return;
     }
 
-    // --- HC set main protocol: set_proto ---
+    // --- NEW: HC set dual protocol: protoL, protoR ---
+    if (request->hasParam("protoL") && request->hasParam("protoR"))
+    {
+        uint8_t proto_L = request->getParam("protoL")->value().toInt();
+        uint8_t proto_R = request->getParam("protoR")->value().toInt();
+        
+        if (proto_L <= static_cast<uint8_t>(ProtocolVersion::SAX) &&
+            proto_R <= static_cast<uint8_t>(ProtocolVersion::SAX))
+        {
+            g_appConfig.protocol_version_L = proto_L;
+            g_appConfig.protocol_version_R = proto_R;
+            // Ažuriraj i stari protocol_version za backward compatibility
+            g_appConfig.protocol_version = proto_L;
+            
+            if (m_eeprom_storage->WriteConfig(&g_appConfig))
+            {
+                Serial.printf("[HttpServer] Postavljeni protokoli: L=%d, R=%d\n", proto_L, proto_R);
+                SendSSIResponse(request, HTTP_RESPONSE_OK);
+            }
+            else
+            {
+                SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            }
+        }
+        else
+        {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+        }
+        return;
+    }
+
+    // --- HC set main protocol: set_proto (DEPRECATED - koristi protoL/protoR) ---
     if (request->hasParam("set_proto"))
     {
         uint8_t proto_val = request->getParam("set_proto")->value().toInt();
         if (proto_val <= static_cast<uint8_t>(ProtocolVersion::SAX))
         {
+            // Za backward compatibility - postavi oba protokola na istu vrijednost
             g_appConfig.protocol_version = proto_val;
+            g_appConfig.protocol_version_L = proto_val;
+            g_appConfig.protocol_version_R = proto_val;
             if (m_eeprom_storage->WriteConfig(&g_appConfig))
             {
                 Serial.printf("[HttpServer] Glavni protokol postavljen: %d\n", proto_val);

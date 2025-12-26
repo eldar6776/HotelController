@@ -46,7 +46,7 @@ struct AppConfig
     uint16_t rs485_bcast_addr;               ///< RS485 broadcast adresa
     uint16_t system_id;                      ///< Sistemski ID
     char mdns_name[32];                      ///< mDNS ime uredjaja
-    uint8_t protocol_version;                ///< Glavni ProtocolVersion enum
+    uint8_t protocol_version;                ///< DEPRECATED: Koristi se samo za migraciju na protocol_version_L/R
     AdditionalSyncPacket additional_sync[3]; ///< Do 3 dodatna TimeSync paketa
     
     // NEW: Web Interface Authentication
@@ -61,6 +61,10 @@ struct AppConfig
     
     // NEW: Dual RS485 Bus Mode
     bool enable_dual_bus_mode;               ///< true = Dual bus mode (L/R liste), false = Single bus mode (samo L lista)
+    
+    // NEW: Mixed Protocol Support (Dual Bus)
+    uint8_t protocol_version_L;              ///< Protokol za Lijevi RS485 bus (CTRL_ADD_L lista)
+    uint8_t protocol_version_R;              ///< Protokol za Desni RS485 bus (CTRL_ADD_R lista)
 };
 
 /**

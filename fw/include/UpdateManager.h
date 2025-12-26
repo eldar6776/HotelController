@@ -181,31 +181,34 @@ private:
     bool ReadMetadataFromFile(const String& metaFilePath, uint32_t* size, uint32_t* crc);
 
     /**
-     * @brief Vraća veličinu chunk-a (payload) za trenutni protokol.
+     * @brief Vraća veličinu chunk-a (payload) za protokol na određenom bus-u.
      * @details STARI protokol (HILLS/SAX/BJELASNICA/SAPLAST/BOSS/BASKUCA): 64 bajta
-     *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): 128 bajtova (default)
+     *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): 128 bajtova
+     * @param address Adresa kontrolera (koristi se za lookup bus-a)
      * @return Veličina chunk-a u bajtovima (64 ili 128)
      * @note OVO SE ODNOSI SAMO NA UPDATE FAJLOVA, NE NA TRANSFER LOGOVA
      */
-    uint16_t GetChunkSizeForProtocol();
+    uint16_t GetChunkSizeForProtocol(uint16_t address);
 
     /**
-     * @brief Vraća timeout za čekanje odgovora tokom update-a za trenutni protokol.
+     * @brief Vraća timeout za čekanje odgovora tokom update-a za protokol na određenom bus-u.
      * @details STARI protokol (HILLS/SAX/BJELASNICA/SAPLAST/BOSS/BASKUCA): 78ms
-     *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): 45ms (default)
+     *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): 45ms
+     * @param address Adresa kontrolera (koristi se za lookup bus-a)
      * @return Timeout u milisekundama (78 ili 45)
      * @note OVO SE ODNOSI SAMO NA UPDATE FAJLOVA, NE NA TRANSFER LOGOVA
      */
-    uint32_t GetUpdateTimeoutForProtocol();
+    uint32_t GetUpdateTimeoutForProtocol(uint16_t address);
 
     /**
-     * @brief Provjerava da li trenutni protokol koristi single-byte ACK/NAK odgovore.
+     * @brief Provjerava da li protokol na određenom bus-u koristi single-byte ACK/NAK odgovore.
      * @details STARI protokol (HILLS/SAX/BJELASNICA/SAPLAST/BOSS/BASKUCA): true (1 bajt ACK/NAK)
      *          NOVI protokol (VUCKO/ULM/VRATA_BOSNE/DZAFIC): false (puni ACK paket sa headerom)
+     * @param address Adresa kontrolera (koristi se za lookup bus-a)
      * @return true ako protokol koristi single-byte ACK/NAK, false inače
      * @note OVO SE ODNOSI SAMO NA UPDATE FAJLOVA, NE NA TRANSFER LOGOVA
      */
-    bool UseSingleByteAckForProtocol();
+    bool UseSingleByteAckForProtocol(uint16_t address);
 
     Rs485Service* m_rs485_service;
     SdCardManager* m_sd_card_manager;

@@ -220,9 +220,6 @@ int HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBu
 {    
     LOG_DEBUG(4, "[HttpQuery] Primljen zahtev za komandu 0x%X na adresu 0x%X\n", cmd->cmd_id, cmd->address);
 
-    uint8_t packet[MAX_PACKET_LENGTH];
-    uint16_t length = CreateRs485Packet(cmd, packet);
-
     // ========================================================================
     // DUAL BUS ROUTING LOGIC
     // ========================================================================
@@ -244,9 +241,23 @@ int HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBu
             // Adresa nije u listama - fallback na Bus 0
             LOG_DEBUG(3, "[HttpQuery] Adresa 0x%04X nepoznata, fallback na Bus 0\n", cmd->address);
             m_rs485_service->SelectBus(0);
+            target_bus = 0; // Postavi target_bus za protokol selekciju
         }
     }
+    else
+    {
+        target_bus = 0; // Single bus mode koristi Bus 0
+    }
+    
     // ========================================================================
+    // PROTOCOL ADAPTATION
+    // ========================================================================
+    // Adaptiraj komandu na osnovu protokola za određeni bus
+    AdaptCommandForProtocol(cmd, target_bus);
+    // ========================================================================
+
+    uint8_t packet[MAX_PACKET_LENGTH];
+    uint16_t length = CreateRs485Packet(cmd, packet);
   
     // Odmah zauzmi magistralu i pošalji
     if (!m_rs485_service->SendPacket(packet, length))
@@ -315,4 +326,42 @@ int HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBu
         LOG_DEBUG(1, "[HttpQuery] GRESKA: Prijemni bafer je pun (overflow).\n");
         return -1;  // Greška
     }
+}
+
+/**
+ * @brief Provjerava da li je protokol za određeni bus HILLS.
+ */
+bool HttpQueryManager::IsHillsProtocolForBus(int8_t bus_id)
+{
+    uint8_t protocol = (bus_id == 0) 
+        ? g_appConfig.protocol_version_L 
+        : g_appConfig.protocol_version_R;
+    
+    return (static_cast<ProtocolVersion>(protocol) == ProtocolVersion::HILLS);
+}
+
+/**
+ * @brief Adaptira cmd_id za protokol na odgovarajućem bus-u.
+ * 
+ * @note Neki protokoli koriste različite komandne bajtove:
+ *       - HILLS:    GET_APPL_STAT -> RUBICON_GET_ROOM_STATUS (0xA1 -> 0x95)
+ *       - Standardni: Koristi originalne komande
+ */
+void HttpQueryManager::AdaptCommandForProtocol(HttpCommand* cmd, int8_t bus_id)
+{
+    bool is_hills = IsHillsProtocolForBus(bus_id);
+    
+    // Adaptiraj GET_APPL_STAT (cst) komandu
+    if (cmd->cmd_id == GET_APPL_STAT && is_hills)
+    {
+        cmd->cmd_id = RUBICON_GET_ROOM_STATUS; // 0xA1 -> 0x95
+        LOG_DEBUG(4, "[HttpQuery] Protokol adaptacija: GET_APPL_STAT -> RUBICON_GET_ROOM_STATUS (HILLS)\n");
+    }
+    else if (cmd->cmd_id == RUBICON_GET_ROOM_STATUS && !is_hills)
+    {
+        cmd->cmd_id = GET_APPL_STAT; // 0x95 -> 0xA1
+        LOG_DEBUG(4, "[HttpQuery] Protokol adaptacija: RUBICON_GET_ROOM_STATUS -> GET_APPL_STAT (Standard)\n");
+    }
+    
+    // Ovdje se mogu dodati adaptacije za druge komande po potrebi
 }

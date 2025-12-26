@@ -32,9 +32,19 @@ enum class ProtocolVersion
 
 // --- RS485 INTERFEJS (Serial2) - Pinovi na P0 konektoru ---
 #define RS485_RX_PIN        34  // (P0 Pin 14: IO34 - Hardverski UART2_RX)
-#define RS485_TX_PIN        33  // (P0 Pin 10: IO33) - Koristimo GPIO33za TX.
-#define RS485_DE_PIN1       12  // (P0 Pin 9: IO12) - Koristimo GPIO12za DE, jer nema "strapping" funkciju.
-#define RS485_DE_PIN2       16  // Drugi RS485 DE (novi)
+                                // ⚠️ VOLTAGE DIVIDER + PULL-UP OBAVEZNI!
+                                // Hardver: MAX485 RO --[1.2kΩ]-- GPIO34 --[2.2kΩ]-- GND
+                                //          3.3V --[10kΩ]-- GPIO34 (pull-up za HIGH-Z state)
+                                // Rezultat: 3.24V signal, 3.3V idle (UART mark state)
+                                // KRITIČNO: Bez pull-up, UART čita null bajtove (0x00)!
+#define RS485_TX_PIN        33  // (P0 Pin 10: IO33) - Koristimo GPIO33 za TX
+                                // 3.3V TX je OK za MAX485 DI (VIH min = 2.0V @ 5V supply)
+#define RS485_DE_PIN1       12  // (P0 Pin 9: IO12) - ⚠️ STRAPPING PIN!
+                                // HARDVERSKI ZAHTJEV: 10kΩ pull-down prema GND (OBAVEZNO!)
+                                // GPIO12 se čita tokom boot-a - MORA biti LOW (3.3V flash mode)
+                                // Softverski kod NE MOŽE pomoći - otpornik je kritičan!
+#define RS485_DE_PIN2       16  // (P0 Pin 12: IO16) - Drugi RS485 DE
+                                // GPIO16 nije strapping pin - pull-down opcionalan (ali preporučen)
 
 // --- I2C INTERFEJS (EEPROM) - Pinovi na P0 konektoru ---
 // PREMJEŠTENO: Koriste se slobodni I/O pinovi koji nisu "strapping" ili input-only
@@ -137,9 +147,10 @@ enum class ProtocolVersion
 // 5. GLOBALNE KONSTANTE SISTEMA
 //=============================================================================
 #define EEPROM_MAGIC_NUMBER         0xDEADBEEF
-#define EEPROM_CONFIG_VERSION       2
+#define EEPROM_CONFIG_VERSION       3  // UPDATED: Added enable_dual_bus_mode flag
 
-#define MAX_ADDRESS_LIST_SIZE       500
+#define MAX_ADDRESS_LIST_SIZE       500  // Max 500 adresa po listi
+#define MAX_ADDRESS_LIST_SIZE_PER_BUS 250  // 250 adresa po bus-u u dual mode (2x250=500 total)
 #define LOG_ENTRY_SIZE              16
 #define MAX_LOG_ENTRIES             3900  // ISPRAVKA: Ograničeno na 62KB umjesto 65KB da stane u 16-bit adresiranje
 #define STATUS_BYTE_VALID           0x55
@@ -249,7 +260,9 @@ enum class ProtocolVersion
 // IMG1.RAW do IMG14.RAW (generiše se dinamički)
 
 // Konfiguracija
-#define PATH_CTRL_ADD_LIST  "/CTRL_ADD.TXT"
+#define PATH_CTRL_ADD_LIST  "/CTRL_ADD.TXT"     // Legacy single bus mode
+#define PATH_CTRL_ADD_L     "/CTRL_ADD_L.TXT"   // Dual bus mode - Left bus
+#define PATH_CTRL_ADD_R     "/CTRL_ADD_R.TXT"   // Dual bus mode - Right bus
 #define PATH_UPDATE_CFG     "/UPDATE.CFG"
 
 //=============================================================================

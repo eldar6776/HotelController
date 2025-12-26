@@ -10,6 +10,7 @@
 #include "DebugConfig.h"   // Uključujemo za LOG_RS485
 #include "ProjectConfig.h"
 #include "EepromStorage.h" // Za g_appConfig
+#include "LogPullManager.h" // Za GetBusForAddress routing
 #include <esp_task_wdt.h>  // NOVO: Uključujemo za watchdog reset
 #include <cstring>
 
@@ -32,6 +33,9 @@ void HttpQueryManager::Initialize(Rs485Service* pRs485Service)
 {
     m_rs485_service = pRs485Service;
 }
+
+// Extern pointer za LogPullManager (routing)
+extern LogPullManager* g_logPullManager_ptr;
 
 /**
  * @brief Kreira RS485 paket iz HttpCommand strukture (bazirano na HC_CreateCmdRequest).
@@ -219,6 +223,30 @@ int HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBu
     uint8_t packet[MAX_PACKET_LENGTH];
     uint16_t length = CreateRs485Packet(cmd, packet);
 
+    // ========================================================================
+    // DUAL BUS ROUTING LOGIC
+    // ========================================================================
+    bool dual_mode = g_appConfig.enable_dual_bus_mode;
+    int8_t target_bus = -1;
+    
+    if (dual_mode && g_logPullManager_ptr != NULL)
+    {
+        target_bus = g_logPullManager_ptr->GetBusForAddress(cmd->address);
+        
+        if (target_bus >= 0)
+        {
+            // Adresa pronađena u listi, postavi odgovarajući bus
+            m_rs485_service->SelectBus(target_bus);
+            LOG_DEBUG(4, "[HttpQuery] Adresa 0x%04X -> Bus %d\n", cmd->address, target_bus);
+        }
+        else
+        {
+            // Adresa nije u listama - fallback na Bus 0
+            LOG_DEBUG(3, "[HttpQuery] Adresa 0x%04X nepoznata, fallback na Bus 0\n", cmd->address);
+            m_rs485_service->SelectBus(0);
+        }
+    }
+    // ========================================================================
   
     // Odmah zauzmi magistralu i pošalji
     if (!m_rs485_service->SendPacket(packet, length))
@@ -229,6 +257,25 @@ int HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBu
 
     // Čekaj odgovor
     int response_len = m_rs485_service->ReceivePacket(responseBuffer, MAX_PACKET_LENGTH, HTTP_QUERY_TIMEOUT_MS);
+
+    // ========================================================================
+    // FALLBACK: Ako timeout i dual mode, pokušaj drugi bus
+    // ========================================================================
+    if (response_len == 0 && dual_mode && target_bus == 0)
+    {
+        LOG_DEBUG(3, "[HttpQuery] Timeout na Bus 0, pokušavam Bus 1...\n");
+        m_rs485_service->SelectBus(1);
+        
+        if (m_rs485_service->SendPacket(packet, length))
+        {
+            response_len = m_rs485_service->ReceivePacket(responseBuffer, MAX_PACKET_LENGTH, HTTP_QUERY_TIMEOUT_MS);
+            
+            if (response_len > 0) {
+                LOG_DEBUG(3, "[HttpQuery] USPJEH na Bus 1!\n");
+            }
+        }
+    }
+    // ========================================================================
 
     if (response_len > 0)
     {

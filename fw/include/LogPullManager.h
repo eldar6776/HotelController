@@ -35,6 +35,13 @@ public:
      * @brief Izvršava ciklus prikupljanja logova (polling).
      */
     void Run();
+    
+    /**
+     * @brief Vraća bus ID za datu adresu (0=Lijevi, 1=Desni, -1=Nepoznato).
+     * @param address Adresa uređaja.
+     * @return Bus ID ili -1 ako adresa nije u listama.
+     */
+    int8_t GetBusForAddress(uint16_t address);
 
 private:
     void ProcessResponse(uint8_t* packet, uint16_t length);
@@ -66,8 +73,18 @@ private:
     PullState m_state;
     uint16_t m_current_address_index;
     uint16_t m_current_pull_address;
+    
+    // Dual bus support
+    uint16_t m_address_list_L[MAX_ADDRESS_LIST_SIZE_PER_BUS]; // Lijevi bus
+    uint16_t m_address_list_R[MAX_ADDRESS_LIST_SIZE_PER_BUS]; // Desni bus
+    uint16_t m_address_list_count_L;
+    uint16_t m_address_list_count_R;
+    uint8_t m_current_bus;  // 0=Lijevi, 1=Desni (za ping-pong)
+    
+    // Legacy single list (za backward compatibility)
     uint16_t m_address_list[MAX_ADDRESS_LIST_SIZE];
     uint16_t m_address_list_count;
+    
     uint8_t m_retry_count;
     uint8_t m_hills_query_attempts;  // HILLS ping-pong counter
     unsigned long m_last_activity_time;

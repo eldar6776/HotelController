@@ -58,6 +58,9 @@ struct AppConfig
     
     // NEW: TimeSync Interval Control
     uint8_t time_sync_interval_min;          ///< Interval slanja TimeSync paketa u minutama (0 = onemogućeno)
+    
+    // NEW: Dual RS485 Bus Mode
+    bool enable_dual_bus_mode;               ///< true = Dual bus mode (L/R liste), false = Single bus mode (samo L lista)
 };
 
 /**
@@ -136,6 +139,50 @@ public:
      * @return true ako je upis uspjesan, false inace.
      */
     bool WriteAddressList(const uint16_t* listBuffer, uint16_t count);
+    
+    /**
+     * @brief Pise listu adresa za LIJEVI bus (dual mode).
+     * @param listBuffer Buffer sa adresama za upis.
+     * @param count Broj adresa za upis (max 250).
+     * @return true ako je upis uspjesan, false inace.
+     */
+    bool WriteAddressListL(const uint16_t* listBuffer, uint16_t count);
+    
+    /**
+     * @brief Pise listu adresa za DESNI bus (dual mode).
+     * @param listBuffer Buffer sa adresama za upis.
+     * @param count Broj adresa za upis (max 250).
+     * @return true ako je upis uspjesan, false inace.
+     */
+    bool WriteAddressListR(const uint16_t* listBuffer, uint16_t count);
+    
+    /**
+     * @brief Cita listu adresa za LIJEVI bus (dual mode).
+     * @param listBuffer Buffer za smjestanje procitanih adresa.
+     * @param maxCount Maksimalan broj adresa (max 250).
+     * @param actualCount Pointer gdje ce se upisati stvarni broj procitanih adresa.
+     * @return true ako je citanje uspjesno, false inace.
+     */
+    bool ReadAddressListL(uint16_t* listBuffer, uint16_t maxCount, uint16_t* actualCount);
+    
+    /**
+     * @brief Cita listu adresa za DESNI bus (dual mode).
+     * @param listBuffer Buffer za smjestanje procitanih adresa.
+     * @param maxCount Maksimalan broj adresa (max 250).
+     * @param actualCount Pointer gdje ce se upisati stvarni broj procitanih adresa.
+     * @return true ako je citanje uspjesno, false inace.
+     */
+    bool ReadAddressListR(uint16_t* listBuffer, uint16_t maxCount, uint16_t* actualCount);
+    
+    /**
+     * @brief Ucitava listu adresa iz CSV fajla sa SD kartice.
+     * @param csvContent String sa CSV sadrzajem (format: "101,102,103" ili "101\\n102\\n103").
+     * @param listBuffer Buffer za smjestanje parsiranih adresa.
+     * @param maxCount Maksimalan broj adresa.
+     * @param actualCount Pointer gdje ce se upisati broj parsiranih adresa.
+     * @return true ako je parsiranje uspjesno, false inace.
+     */
+    bool ParseAddressListFromCSV(const String& csvContent, uint16_t* listBuffer, uint16_t maxCount, uint16_t* actualCount);
     
     // --- API za Logger (head/tail) ---
 

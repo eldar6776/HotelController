@@ -142,6 +142,18 @@ void EepromStorage::MigrateConfig(uint16_t oldVersion)
     }
     
     // ========================================================================
+    // NOVO: Dual Bus Mode (dodato u V3)
+    // ========================================================================
+    
+    // Ako je stara verzija (< 3), postavi enable_dual_bus_mode na false (single bus mode)
+    // Ovo osigurava backward compatibility - stari uređaji nastavljaju sa single bus mode-om
+    if (oldVersion < 3)
+    {
+        g_appConfig.enable_dual_bus_mode = false;
+        LOG_DEBUG(2, "[Eeprom] Inicijalizovan enable_dual_bus_mode -> false (single bus - kompatibilnost)\n");
+    }
+    
+    // ========================================================================
     // TEMPLATE ZA BUDUĆA POLJA - kopiraj i prilagodi:
     // ========================================================================
     
@@ -244,8 +256,11 @@ void EepromStorage::LoadDefaultConfig()
     
     // 9. NEW: TimeSync Interval (default: 1 minuta)
     g_appConfig.time_sync_interval_min = 1;
+    
+    // 10. NEW: Dual Bus Mode (default: onemogućen - single bus mode)
+    g_appConfig.enable_dual_bus_mode = false;
 
-    // 9. Snimi nove (defaultne) vrijednosti u EEPROM
+    // 11. Snimi nove (defaultne) vrijednosti u EEPROM
     if (WriteConfig(&g_appConfig))
     {
         LOG_DEBUG(3, "[Eeprom] Podrazumijevane vrijednosti uspješno snimljene u EEPROM.\n");
@@ -772,66 +787,179 @@ LoggerStatus EepromStorage::DeleteLogBlock()
     return LoggerStatus::LOGGER_OK;
 }
 
-// Implementacija WriteAddressList
+// Implementacija WriteAddressList (legacy - piše u offset 0)
 bool EepromStorage::WriteAddressList(const uint16_t* listBuffer, uint16_t count)
 {
-    // Vraćamo na originalnu, efikasnu metodu pisanja
-    uint16_t addresses_to_write = min(count, (uint16_t)MAX_ADDRESS_LIST_SIZE);
+    // Legacy metoda - piše u offset 0 (kompatibilnost sa single bus mode)
+    return WriteAddressListL(listBuffer, count);
+}
+
+// Implementacija WriteAddressListL (Lijevi bus - offset 0)
+bool EepromStorage::WriteAddressListL(const uint16_t* listBuffer, uint16_t count)
+{
+    uint16_t addresses_to_write = min(count, (uint16_t)MAX_ADDRESS_LIST_SIZE_PER_BUS);
     uint16_t bytes_to_write = addresses_to_write * sizeof(uint16_t);
 
-    LOG_DEBUG(3, "[Eeprom] Započinjem upis %u validnih adresa...\n", addresses_to_write);
+    LOG_DEBUG(3, "[Eeprom] Upisujem LIJEVI bus: %u adresa (offset 0)\n", addresses_to_write);
     if (!WriteBytes(EEPROM_ADDRESS_LIST_START_ADDR, (const uint8_t*)listBuffer, bytes_to_write))
     {
-        LOG_DEBUG(1, "[Eeprom] GRESKA: Pisanje liste adresa neuspješno.\n");
+        LOG_DEBUG(1, "[Eeprom] GRESKA: Pisanje LIJEVOG busa neuspješno.\n");
         return false;
     }
     
-    // Eksplicitno nuliramo ostatak memorije za listu.
-    uint16_t remaining_bytes = EEPROM_ADDRESS_LIST_SIZE - bytes_to_write;
+    // Nuliramo ostatak prostora za Lijevi bus (500 bajta)
+    uint16_t remaining_bytes = 500 - bytes_to_write;
     if (remaining_bytes > 0)
     {
-        LOG_DEBUG(3, "[Eeprom] Čistim ostatak (%u B) memorije za listu adresa...\n", remaining_bytes);
-        uint8_t zero_buffer[16] = {0}; // Bafer sa nulama
-        
-        // Upisujemo nule u ostatak prostora, u komadima
+        uint8_t zero_buffer[16] = {0};
         for (uint16_t offset = 0; offset < remaining_bytes; offset += sizeof(zero_buffer)) {
             uint16_t clear_address = EEPROM_ADDRESS_LIST_START_ADDR + bytes_to_write + offset;
             uint16_t chunk_to_clear = min((uint16_t)sizeof(zero_buffer), (uint16_t)(remaining_bytes - offset));
             if (!WriteBytes(clear_address, zero_buffer, chunk_to_clear)) {
-                 LOG_DEBUG(1, "[Eeprom] GRESKA: Čišćenje ostatka liste adresa neuspješno.\n");
+                 LOG_DEBUG(1, "[Eeprom] GRESKA: Čišćenje LIJEVOG busa neuspješno.\n");
                  return false;
             }
         }
     }
 
-    LOG_DEBUG(3, "[Eeprom] Upis i čišćenje liste adresa uspješno završeno.\n");
+    LOG_DEBUG(3, "[Eeprom] LIJEVI bus uspješno upisan.\n");
+    return true;
+}
+
+// Implementacija WriteAddressListR (Desni bus - offset 500)
+bool EepromStorage::WriteAddressListR(const uint16_t* listBuffer, uint16_t count)
+{
+    uint16_t addresses_to_write = min(count, (uint16_t)MAX_ADDRESS_LIST_SIZE_PER_BUS);
+    uint16_t bytes_to_write = addresses_to_write * sizeof(uint16_t);
+    uint16_t offset_r = EEPROM_ADDRESS_LIST_START_ADDR + 500; // Offset za Desni bus
+
+    LOG_DEBUG(3, "[Eeprom] Upisujem DESNI bus: %u adresa (offset 500)\n", addresses_to_write);
+    if (!WriteBytes(offset_r, (const uint8_t*)listBuffer, bytes_to_write))
+    {
+        LOG_DEBUG(1, "[Eeprom] GRESKA: Pisanje DESNOG busa neuspješno.\n");
+        return false;
+    }
+    
+    // Nuliramo ostatak prostora za Desni bus (500 bajta)
+    uint16_t remaining_bytes = 500 - bytes_to_write;
+    if (remaining_bytes > 0)
+    {
+        uint8_t zero_buffer[16] = {0};
+        for (uint16_t offset = 0; offset < remaining_bytes; offset += sizeof(zero_buffer)) {
+            uint16_t clear_address = offset_r + bytes_to_write + offset;
+            uint16_t chunk_to_clear = min((uint16_t)sizeof(zero_buffer), (uint16_t)(remaining_bytes - offset));
+            if (!WriteBytes(clear_address, zero_buffer, chunk_to_clear)) {
+                 LOG_DEBUG(1, "[Eeprom] GRESKA: Čišćenje DESNOG busa neuspješno.\n");
+                 return false;
+            }
+        }
+    }
+
+    LOG_DEBUG(3, "[Eeprom] DESNI bus uspješno upisan.\n");
     return true;
 }
 
 bool EepromStorage::ReadAddressList(uint16_t* listBuffer, uint16_t maxCount, uint16_t* actualCount)
 {
-    uint16_t bytes_to_read = min((uint16_t)EEPROM_ADDRESS_LIST_SIZE, (uint16_t)(maxCount * sizeof(uint16_t)));
+    // Legacy metoda - čita sa offset 0 (kompatibilnost)
+    return ReadAddressListL(listBuffer, maxCount, actualCount);
+}
+
+// Implementacija ReadAddressListL (Lijevi bus - offset 0)
+bool EepromStorage::ReadAddressListL(uint16_t* listBuffer, uint16_t maxCount, uint16_t* actualCount)
+{
+    uint16_t max_read = min(maxCount, (uint16_t)MAX_ADDRESS_LIST_SIZE_PER_BUS);
+    uint16_t bytes_to_read = max_read * sizeof(uint16_t);
     
     if (ReadBytes(EEPROM_ADDRESS_LIST_START_ADDR, (uint8_t*)listBuffer, bytes_to_read))
     {
-        // ISPRAVKA: Nakon čitanja bloka, prebroj validne (ne-nula) adrese.
         uint16_t valid_count = 0;
-        for (uint16_t i = 0; i < (bytes_to_read / sizeof(uint16_t)); i++)
+        for (uint16_t i = 0; i < max_read; i++)
         {
-            if (listBuffer[i] == 0)
-            {
-                // Stani kod prve nule, to je kraj liste.
-                break;
-            }
+            if (listBuffer[i] == 0) break;
             valid_count++;
         }
         *actualCount = valid_count;
-
-        LOG_DEBUG(3, "[Eeprom] Uspješno pročitan blok od %u B. Pronađeno %u validnih adresa.\n", bytes_to_read, *actualCount);
+        LOG_DEBUG(3, "[Eeprom] LIJEVI bus: %u validnih adresa.\n", *actualCount);
         return true;
     }
     *actualCount = 0;
     return false;
+}
+
+// Implementacija ReadAddressListR (Desni bus - offset 500)
+bool EepromStorage::ReadAddressListR(uint16_t* listBuffer, uint16_t maxCount, uint16_t* actualCount)
+{
+    uint16_t max_read = min(maxCount, (uint16_t)MAX_ADDRESS_LIST_SIZE_PER_BUS);
+    uint16_t bytes_to_read = max_read * sizeof(uint16_t);
+    uint16_t offset_r = EEPROM_ADDRESS_LIST_START_ADDR + 500;
+    
+    if (ReadBytes(offset_r, (uint8_t*)listBuffer, bytes_to_read))
+    {
+        uint16_t valid_count = 0;
+        for (uint16_t i = 0; i < max_read; i++)
+        {
+            if (listBuffer[i] == 0) break;
+            valid_count++;
+        }
+        *actualCount = valid_count;
+        LOG_DEBUG(3, "[Eeprom] DESNI bus: %u validnih adresa.\n", *actualCount);
+        return true;
+    }
+    *actualCount = 0;
+    return false;
+}
+
+/**
+ * @brief Parsira CSV string i ekstraktuje adrese.
+ * @param csvContent String sa CSV sadržajem (format: "101,102,103" ili "101\n102\n103").
+ * @param listBuffer Buffer za smještanje parsiranih adresa.
+ * @param maxCount Maksimalan broj adresa.
+ * @param actualCount Pointer gdje će se upisati broj parsiranih adresa.
+ * @return true ako je parsiranje uspješno, false inače.
+ */
+bool EepromStorage::ParseAddressListFromCSV(const String& csvContent, uint16_t* listBuffer, uint16_t maxCount, uint16_t* actualCount)
+{
+    memset(listBuffer, 0, maxCount * sizeof(uint16_t));
+    uint16_t count = 0;
+    
+    String content = csvContent;
+    
+    // Ukloni sve nakon ';' karaktera (kraj liste marker)
+    int end_char_pos = content.indexOf(';');
+    if (end_char_pos != -1) {
+        content = content.substring(0, end_char_pos);
+    }
+    
+    // Zamijeni nove redove zarezima za unificiran parsing
+    content.replace("\n", ",");
+    content.replace("\r", "");
+    
+    int start = 0;
+    int end = content.indexOf(',');
+    content += ','; // Dodaj zarez na kraj da bi petlja obradila i zadnji element
+    
+    while (end != -1 && count < maxCount)
+    {
+        String addrStr = content.substring(start, end);
+        addrStr.trim();
+        
+        // Ignoriši prazne linije i komentare (počinju sa '#')
+        if (addrStr.length() > 0 && addrStr.charAt(0) != '#')
+        {
+            uint16_t addr = addrStr.toInt();
+            if (addr > 0)
+            {
+                listBuffer[count++] = addr;
+            }
+        }
+        start = end + 1;
+        end = content.indexOf(',', start);
+    }
+    
+    *actualCount = count;
+    LOG_DEBUG(3, "[Eeprom] CSV parsirano: %u adresa.\n", count);
+    return (count > 0);
 }
 
 // ============================================================================

@@ -21,6 +21,9 @@ LogPullManager::LogPullManager() :
     m_current_address_index(0),
     m_current_pull_address(0),
     m_address_list_count(0),
+    m_address_list_count_L(0),
+    m_address_list_count_R(0),
+    m_current_bus(0),
     m_retry_count(0),
     m_hills_query_attempts(0),
     m_last_activity_time(0)
@@ -33,19 +36,57 @@ void LogPullManager::Initialize(Rs485Service* pRs485Service, EepromStorage* pEep
     m_rs485_service = pRs485Service;
     m_eeprom_storage = pEepromStorage;
 
-    // Ucitaj listu adresa iz EEPROM-a u RAM
-    // Koristi MAX_ADDRESS_LIST_SIZE iz ProjectConfig.h
-    if (!m_eeprom_storage->ReadAddressList(m_address_list, MAX_ADDRESS_LIST_SIZE, &m_address_list_count))
+    if (g_appConfig.enable_dual_bus_mode)
     {
-        Serial.println(F("[LogPullManager] GRESKA: Nije moguce ucitati listu adresa!"));
+        // Dual bus mode - učitaj obje liste
+        Serial.println(F("[LogPullManager] DUAL BUS MODE - Učitavam L i R liste"));
+        
+        if (!m_eeprom_storage->ReadAddressListL(m_address_list_L, MAX_ADDRESS_LIST_SIZE_PER_BUS, &m_address_list_count_L))
+        {
+            Serial.println(F("[LogPullManager] GRESKA: LIJEVI bus lista nije učitana!"));
+        }
+        else
+        {
+            Serial.printf("[LogPullManager] LIJEVI bus: %d uređaja\n", m_address_list_count_L);
+            for(uint16_t i = 0; i < m_address_list_count_L; i++) {
+                Serial.printf("  -> L[%d]: %04d (0x%04X)\n", i, m_address_list_L[i], m_address_list_L[i]);
+            }
+        }
+        
+        if (!m_eeprom_storage->ReadAddressListR(m_address_list_R, MAX_ADDRESS_LIST_SIZE_PER_BUS, &m_address_list_count_R))
+        {
+            Serial.println(F("[LogPullManager] GRESKA: DESNI bus lista nije učitana!"));
+        }
+        else
+        {
+            Serial.printf("[LogPullManager] DESNI bus: %d uređaja\n", m_address_list_count_R);
+            for(uint16_t i = 0; i < m_address_list_count_R; i++) {
+                Serial.printf("  -> R[%d]: %04d (0x%04X)\n", i, m_address_list_R[i], m_address_list_R[i]);
+            }
+        }
+        
+        m_current_bus = 0; // Počinjemo sa Lijevim busom
+        m_address_list_count = 0; // Legacy lista nije u upotrebi
     }
     else
     {
-        Serial.printf("[LogPullManager] Lista adresa ucitana, %d uredjaja.\n", m_address_list_count);
-        // DEBUG ISPIS: Prikaži sve adrese koje su pročitane
-        for(uint16_t i = 0; i < m_address_list_count; i++) {
-            Serial.printf("  -> Pročitana Adresa[%d]: %04d (0x%04X)\n", i, m_address_list[i], m_address_list[i]);
+        // Single bus mode - samo Lijeva lista (legacy kompatibilnost)
+        Serial.println(F("[LogPullManager] SINGLE BUS MODE - Učitavam samo L listu"));
+        
+        if (!m_eeprom_storage->ReadAddressList(m_address_list, MAX_ADDRESS_LIST_SIZE, &m_address_list_count))
+        {
+            Serial.println(F("[LogPullManager] GRESKA: Nije moguće učitati listu adresa!"));
         }
+        else
+        {
+            Serial.printf("[LogPullManager] Lista adresa učitana, %d uređaja.\n", m_address_list_count);
+            for(uint16_t i = 0; i < m_address_list_count; i++) {
+                Serial.printf("  -> Pročitana Adresa[%d]: %04d (0x%04X)\n", i, m_address_list[i], m_address_list[i]);
+            }
+        }
+        
+        m_address_list_count_L = 0;
+        m_address_list_count_R = 0;
     }
 }
 
@@ -166,12 +207,34 @@ void LogPullManager::Run()
     // KORAK 3: Ako smo slobodni (IDLE), započni novi ciklus anketiranja.
     if (m_state == PullState::IDLE)
     {
-        if (m_address_list_count == 0) {
-            vTaskDelay(pdMS_TO_TICKS(100)); // Nema adresa, pauziraj.
-            return;
+        // Dual bus mode check
+        if (g_appConfig.enable_dual_bus_mode)
+        {
+            if (m_address_list_count_L == 0 && m_address_list_count_R == 0) {
+                vTaskDelay(pdMS_TO_TICKS(100)); // Nema adresa, pauziraj.
+                return;
+            }
+        }
+        else
+        {
+            if (m_address_list_count == 0) {
+                vTaskDelay(pdMS_TO_TICKS(100)); // Nema adresa, pauziraj.
+                return;
+            }
         }
         
         m_current_pull_address = GetNextAddress();
+        
+        // Postavi aktivan bus prije slanja
+        if (g_appConfig.enable_dual_bus_mode)
+        {
+            int8_t bus_id = GetBusForAddress(m_current_pull_address);
+            if (bus_id >= 0) {
+                m_rs485_service->SelectBus(bus_id);
+                LOG_DEBUG(4, "[LogPull] Adresa 0x%04X -> Bus %d\n", m_current_pull_address, bus_id);
+            }
+        }
+        
         m_retry_count = 0;
         m_hills_query_attempts = 0; // Reset counter za novu adresu
         m_state = PullState::SENDING_STATUS_REQUEST; // Pripremi se za slanje statusnog upita.
@@ -196,24 +259,69 @@ void LogPullManager::Run()
 
 /**
  * @brief Vraća sljedeću adresu za polling (Replicira HC_GetNextAddr).
+ * Implementira ping-pong logic za dual bus mode.
  */
 uint16_t LogPullManager::GetNextAddress()
 {
-    if (m_address_list_count == 0) return 0;
-    
-    // Uzimamo trenutnu adresu
-    uint16_t current_address = m_address_list[m_current_address_index];
-
-    // Pomjeramo indeks na sljedeću adresu
-    m_current_address_index = (m_current_address_index + 1);
-
-    // Ako smo došli do kraja liste, vraćamo se na početak
-    if (m_current_address_index >= m_address_list_count)
+    if (g_appConfig.enable_dual_bus_mode)
     {
-        m_current_address_index = 0;
+        // PING-PONG LOGIC: Izmjenjuju se L i R bus
+        if (m_current_bus == 0) // Lijevi bus
+        {
+            if (m_address_list_count_L == 0)
+            {
+                // Lijeva lista prazna, prebaci na Desnu
+                m_current_bus = 1;
+                m_current_address_index = 0;
+                if (m_address_list_count_R == 0) return 0;
+                return m_address_list_R[0];
+            }
+            
+            uint16_t current_address = m_address_list_L[m_current_address_index];
+            m_current_address_index = (m_current_address_index + 1) % m_address_list_count_L;
+            
+            // Nakon svake adrese sa Lijevog, prebaci na Desni
+            m_current_bus = 1;
+            return current_address;
+        }
+        else // Desni bus
+        {
+            if (m_address_list_count_R == 0)
+            {
+                // Desna lista prazna, prebaci na Lijevu
+                m_current_bus = 0;
+                if (m_address_list_count_L == 0) return 0;
+                return m_address_list_L[m_current_address_index];
+            }
+            
+            // Ako je m_current_address_index >= count_R, resetuj
+            if (m_current_address_index >= m_address_list_count_R) {
+                m_current_address_index = 0;
+            }
+            
+            uint16_t current_address = m_address_list_R[m_current_address_index];
+            m_current_address_index = (m_current_address_index + 1) % m_address_list_count_R;
+            
+            // Nakon svake adrese sa Desnog, prebaci na Lijevi
+            m_current_bus = 0;
+            return current_address;
+        }
     }
-    
-    return current_address;
+    else
+    {
+        // Single bus mode (legacy)
+        if (m_address_list_count == 0) return 0;
+        
+        uint16_t current_address = m_address_list[m_current_address_index];
+        m_current_address_index = (m_current_address_index + 1);
+        
+        if (m_current_address_index >= m_address_list_count)
+        {
+            m_current_address_index = 0;
+        }
+        
+        return current_address;
+    }
 }
 
 /**
@@ -466,4 +574,31 @@ void LogPullManager::ProcessResponse(uint8_t* packet, uint16_t length)
     m_state = PullState::IDLE;
     m_hills_query_attempts = 0;
     m_last_activity_time = millis();
+}
+
+/**
+ * @brief Vraća bus ID za datu adresu.
+ * @param address Adresa uređaja.
+ * @return 0 (Lijevi bus), 1 (Desni bus), ili -1 (nije pronađeno).
+ */
+int8_t LogPullManager::GetBusForAddress(uint16_t address)
+{
+    // Provjera u Lijevoj listi
+    for (uint16_t i = 0; i < m_address_list_count_L; i++)
+    {
+        if (m_address_list_L[i] == address) {
+            return 0; // Lijevi bus
+        }
+    }
+    
+    // Provjera u Desnoj listi
+    for (uint16_t i = 0; i < m_address_list_count_R; i++)
+    {
+        if (m_address_list_R[i] == address) {
+            return 1; // Desni bus
+        }
+    }
+    
+    // Adresa nije pronađena ni u jednoj listi
+    return -1;
 }

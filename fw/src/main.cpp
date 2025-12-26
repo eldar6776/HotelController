@@ -37,6 +37,9 @@ TimeSync g_timeSync;
 FirmwareUpdateManager g_fufUpdateManager; // NOVO
 UpdateManager g_updateManager;
 
+// Globalni pointer za dual bus routing (potreban u HttpQueryManager)
+LogPullManager* g_logPullManager_ptr = &g_logPullManager;
+
 // Globalna varijabla konfiguracije
 extern AppConfig g_appConfig; // Inicijalizacija na 0
 
@@ -51,7 +54,6 @@ SystemState g_systemState = SystemState::RUN_POLLING; // Počinjemo sa pollingom
 
 void setup() 
 {
-    
     // --- FAZA 1: Inicijalizacija Serijske Komunikacije ---
     Serial.begin(SERIAL_DEBUG_BAUDRATE); 
     while (!Serial && millis() < 2000) {} 
@@ -76,6 +78,82 @@ void setup()
     g_sdCardManager.Initialize(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, SPI_FLASH_CS_PIN);
 
     g_eepromStorage.Initialize(I2C_SDA_PIN, I2C_SCL_PIN);
+    
+    // --- FAZA 2.5: Ucitavanje Address List sa SD kartice (ako postoji) ---
+    Serial.println(F("[setup] Provjera address list fajlova na SD kartici..."));
+    
+    if (g_appConfig.enable_dual_bus_mode)
+    {
+        // DUAL BUS MODE: Ucitaj _L.TXT i _R.TXT
+        Serial.println(F("[setup] DUAL BUS MODE - Ucitavam L i R liste sa SD..."));
+        
+        // Ucitaj LIJEVI bus
+        if (g_sdCardManager.FileExists(PATH_CTRL_ADD_L))
+        {
+            String contentL = g_sdCardManager.ReadTextFile(PATH_CTRL_ADD_L);
+            if (contentL.length() > 0)
+            {
+                uint16_t listL[MAX_ADDRESS_LIST_SIZE_PER_BUS];
+                uint16_t countL = 0;
+                
+                if (g_eepromStorage.ParseAddressListFromCSV(contentL, listL, MAX_ADDRESS_LIST_SIZE_PER_BUS, &countL))
+                {
+                    g_eepromStorage.WriteAddressListL(listL, countL);
+                    Serial.printf("[setup] LIJEVI bus: %d adresa ucitano sa SD.\n", countL);
+                }
+            }
+        }
+        else
+        {
+            Serial.println(F("[setup] LIJEVI bus: CTRL_ADD_L.TXT ne postoji."));
+        }
+        
+        // Ucitaj DESNI bus
+        if (g_sdCardManager.FileExists(PATH_CTRL_ADD_R))
+        {
+            String contentR = g_sdCardManager.ReadTextFile(PATH_CTRL_ADD_R);
+            if (contentR.length() > 0)
+            {
+                uint16_t listR[MAX_ADDRESS_LIST_SIZE_PER_BUS];
+                uint16_t countR = 0;
+                
+                if (g_eepromStorage.ParseAddressListFromCSV(contentR, listR, MAX_ADDRESS_LIST_SIZE_PER_BUS, &countR))
+                {
+                    g_eepromStorage.WriteAddressListR(listR, countR);
+                    Serial.printf("[setup] DESNI bus: %d adresa ucitano sa SD.\n", countR);
+                }
+            }
+        }
+        else
+        {
+            Serial.println(F("[setup] DESNI bus: CTRL_ADD_R.TXT ne postoji."));
+        }
+    }
+    else
+    {
+        // SINGLE BUS MODE: Ucitaj samo CTRL_ADD.TXT
+        Serial.println(F("[setup] SINGLE BUS MODE - Ucitavam CTRL_ADD.TXT sa SD..."));
+        
+        if (g_sdCardManager.FileExists(PATH_CTRL_ADD_LIST))
+        {
+            String content = g_sdCardManager.ReadTextFile(PATH_CTRL_ADD_LIST);
+            if (content.length() > 0)
+            {
+                uint16_t list[MAX_ADDRESS_LIST_SIZE];
+                uint16_t count = 0;
+                
+                if (g_eepromStorage.ParseAddressListFromCSV(content, list, MAX_ADDRESS_LIST_SIZE, &count))
+                {
+                    g_eepromStorage.WriteAddressList(list, count);
+                    Serial.printf("[setup] %d adresa ucitano sa SD.\n", count);
+                }
+            }
+        }
+        else
+        {
+            Serial.println(F("[setup] CTRL_ADD.TXT ne postoji."));
+        }
+    }
     
     // Inicijalizujemo samo event handlere za WiFi
     // I Rs485 hardver

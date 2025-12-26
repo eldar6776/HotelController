@@ -17,15 +17,25 @@ extern AppConfig g_appConfig;
 Rs485Service::Rs485Service() : m_rs485_serial(2) // Koristi UART2 (Serial2)
 {
     m_single_byte_mode = false; // Default: normalni mod (za LogPullManager i ostale)
+    m_active_bus = 0; // Default: Lijevi bus aktivan
 }
 
 void Rs485Service::Initialize()
 {
     Serial.println(F("[Rs485Service] Inicijalizacija..."));
+    
+    // Setup oba DE pina
     pinMode(RS485_DE_PIN1, OUTPUT);
-    digitalWrite(RS485_DE_PIN1, LOW); // Postavi na RX (prijem)
-
+    pinMode(RS485_DE_PIN2, OUTPUT);
+    
+    // Default stanje: Lijevi bus aktivan, Desni bus disabled
+    digitalWrite(RS485_DE_PIN1, LOW);  // DE1 = LOW (RX mod, spreman za TX)
+    digitalWrite(RS485_DE_PIN2, HIGH); // DE2 = HIGH (disabled, ne ometa bus)
+    
     m_rs485_serial.begin(RS485_BAUDRATE, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
+    
+    Serial.printf("[Rs485Service] Dual DE inicijalizovan: DE1=%d, DE2=%d, Aktivan bus=%d\n", 
+                  RS485_DE_PIN1, RS485_DE_PIN2, m_active_bus);
 }
 
 /**
@@ -125,6 +135,16 @@ int Rs485Service::ReceivePacket(uint8_t* buffer, uint16_t buffer_size, uint32_t 
         {
             uint8_t incoming_byte = m_rs485_serial.read();
             
+            // =============================================================================
+            // WORKAROUND: Ignoriši null bajtove na početku (HIGH-Z artifact od voltage divider-a)
+            // Uzrok: DE=LOW drži RO pin u HIGH-Z, voltage divider vuče liniju prema GND
+            // TODO HARDVER: Dodati 10kΩ pull-up otpornik između GPIO34 i 3.3V
+            // =============================================================================
+            if (rx_count == 0 && incoming_byte == 0x00)
+            {
+                continue; // Preskoči null bajtove dok ne stigne pravi paket
+            }
+            
             // Osiguraj da ne pređemo veličinu bafera
             if (rx_count >= buffer_size)
             {
@@ -215,14 +235,55 @@ bool Rs485Service::SendPacket(const uint8_t* data, uint16_t length)
 
     LOG_DEBUG(4, "[Rs485] Slanje paketa -> Dužina: %d, Sadržaj: %02X %02X %02X %02X %02X %02X %02X...\n", length, data[0], data[1], data[2], data[3], data[4], data[5], data[6]);
 
-    digitalWrite(RS485_DE_PIN1, HIGH); 
+    // Koristi aktivan DE pin prema trenutno odabranom busu
+    uint8_t active_de_pin = (m_active_bus == 0) ? RS485_DE_PIN1 : RS485_DE_PIN2;
+    
+    digitalWrite(active_de_pin, HIGH); 
     delayMicroseconds(50); 
 
     m_rs485_serial.write(data, length);
     m_rs485_serial.flush(); 
     
     delayMicroseconds(50);
-    digitalWrite(RS485_DE_PIN1, LOW); 
+    digitalWrite(active_de_pin, LOW); 
 
     return true;
 }
+
+/**
+ * @brief Prebacuje aktivni bus (0=Lijevi, 1=Desni).
+ * @param busId ID busa (0 ili 1).
+ * @note Neaktivan bus ima DE=HIGH (disabled, ne ometa dijeljenu RX liniju).
+ */
+void Rs485Service::SelectBus(uint8_t busId)
+{
+    if (busId > 1) {
+        Serial.printf("[Rs485Service] ERROR: Nevažeći busId=%d. Dozvoljeno: 0 ili 1.\n", busId);
+        return;
+    }
+    
+    if (busId == m_active_bus) {
+        return; // Već je odabran, nema potrebe mjenjati
+    }
+    
+    m_active_bus = busId;
+    
+    if (busId == 0) {
+        // Aktiviraj Lijevi bus, onemogući Desni
+        digitalWrite(RS485_DE_PIN1, LOW);  // DE1 = LOW (RX mod, spreman za TX)
+        digitalWrite(RS485_DE_PIN2, HIGH); // DE2 = HIGH (disabled)
+    } else {
+        // Aktiviraj Desni bus, onemogući Lijevi
+        digitalWrite(RS485_DE_PIN1, HIGH); // DE1 = HIGH (disabled)
+        digitalWrite(RS485_DE_PIN2, LOW);  // DE2 = LOW (RX mod, spreman za TX)
+    }
+    
+    LOG_DEBUG(3, "[Rs485Service] Bus prebačen na: %s (ID=%d)\n", 
+              busId == 0 ? "LIJEVI" : "DESNI", busId);
+}
+
+/**
+ * @brief Vraća ID trenutno aktivnog busa.
+ * @return 0 (Lijevi) ili 1 (Desni).
+ */
+// Implementacija je inline u header fajlu

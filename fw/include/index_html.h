@@ -72,8 +72,12 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <hr>
         Sistem ID ciljanog kontrolera: <input id="kont107" value="%SYSID%" type="number" min="1" max="65000">
         <input value="Promjeni Sistem ID" type="button" onclick="send_event(107)">
-        <hr>
-        <h4>Upravljanje Listom Adresa</h4>
+    </div>
+    <hr>
+    
+    <!-- Upravljanje Listom Adresa -->
+    <div class="file-section">
+        <h3>Upravljanje Listom Adresa</h3>
         <input value="Učitaj Listu Kontrolera" type="button" onclick="load_address_list()" 
                title="Učitava CTRL_ADD.TXT sa uSD kartice i kešira u EEPROM">
         <span style="color: #666; font-size: 0.9em;">(Učitava iz CTRL_ADD.TXT na uSD kartici)</span>
@@ -81,6 +85,11 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         <input type="checkbox" id="logger_enable" onchange="send_event(108)">
         <label for="logger_enable">Omogući Logove</label>
         <span style="color: #666; font-size: 0.9em;">(Omogućava/onemogućava prikupljanje logova sa kontrolera)</span>
+        <hr>
+        <input type="checkbox" id="kont583" %DUALBUS%>
+        <label for="kont583">Koristi dvije RS485 liste (Lijevi/Desni bus)</label>
+        <input value="Primjeni" type="button" onclick="send_event(583)">
+        <p style="font-size: 11px; color: #666; margin-top: 5px;">Napomena: Restart potreban nakon promjene dual bus mode-a</p>
     </div>
     <hr>
     
@@ -757,6 +766,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         }
         else if (t == "582") {
             htt = "sysctrl.cgi?mdnsname=" + encodeURIComponent(document.getElementById("kont582").value);
+        }
+        else if (t == "583") {
+            var dual_bus_enabled = document.getElementById("kont583").checked ? "1" : "0";
+            htt = "sysctrl.cgi?dual_bus=" + dual_bus_enabled;
         }
         else if (t == "600") { // Snimanje dodatnih sync paketa
             htt = "sysctrl.cgi?set_add_sync=1";

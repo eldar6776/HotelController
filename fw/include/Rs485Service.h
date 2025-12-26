@@ -68,6 +68,22 @@ public:
      */
     void DisableSingleByteMode();
 
+    /**
+     * @brief Selektuje aktivni RS485 bus (Lijevi ili Desni).
+     * @details U dual bus mode-u, kontroliše DE pinove:
+     *          - Aktivni bus: DE normalno (HIGH za TX, LOW za RX)
+     *          - Neaktivni bus: DE stalno HIGH (disabled - RX onemogućen)
+     * @param busId ID bus-a: 0 = Lijevi (DE_PIN1), 1 = Desni (DE_PIN2)
+     * @note KRITIČNO: Neaktivni bus mora imati DE=HIGH da ne ometa dijeljenu RX liniju!
+     */
+    void SelectBus(uint8_t busId);
+
+    /**
+     * @brief Vraća ID trenutno aktivnog bus-a.
+     * @return 0 = Lijevi bus, 1 = Desni bus
+     */
+    uint8_t GetActiveBus() const { return m_active_bus; }
+
 private:
     bool ValidatePacket(uint8_t* buffer, uint16_t length);
     uint16_t CalculateChecksum(uint8_t* buffer, uint16_t data_length); 
@@ -80,6 +96,12 @@ private:
      *          Kada je false, radi normalno (čeka puni paket) - za LogPullManager i ostale.
      */
     bool m_single_byte_mode;
+    
+    /**
+     * @brief ID trenutno aktivnog RS485 bus-a.
+     * @details 0 = Lijevi bus (DE_PIN1), 1 = Desni bus (DE_PIN2)
+     */
+    uint8_t m_active_bus;
 
 };
 

@@ -347,6 +347,7 @@ void HttpServer::HandleRoot(AsyncWebServerRequest *request)
         
         if(var == "SYSID") return String(g_appConfig.system_id);
         if(var == "MDNSNAME") return String(g_appConfig.mdns_name);
+        if(var == "DUALBUS") return g_appConfig.enable_dual_bus_mode ? String("checked") : String("");
 
         return String();
     });
@@ -735,6 +736,29 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         return;
     }
 
+    // --- HC Dual Bus Mode toggle: dual_bus ---
+    if (request->hasParam("dual_bus"))
+    {
+        bool new_dual_bus_mode = (request->getParam("dual_bus")->value() == "1");
+        
+        Serial.printf("[HttpServer] Promjena Dual Bus Mode: %s -> %s\n", 
+            g_appConfig.enable_dual_bus_mode ? "Dual" : "Single",
+            new_dual_bus_mode ? "Dual" : "Single");
+        
+        g_appConfig.enable_dual_bus_mode = new_dual_bus_mode;
+        
+        if (m_eeprom_storage->WriteConfig(&g_appConfig))
+        {
+            Serial.println(F("[HttpServer] UPOZORENJE: Restart potreban za primjenu dual bus mode promjene!"));
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
+        }
+        else
+        {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+        }
+        return;
+    }
+
     // --- HC set additional sync packets: set_add_sync ---
     if (request->hasParam("set_add_sync"))
     {
@@ -905,40 +929,14 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
             return;
         }
 
-        // Parsiranje CTRL_ADD.TXT (formati: "101,102,103;" ili "101\n102\n103")
+        // Parsiranje CTRL_ADD.TXT pomoću centralizovane funkcije
         uint16_t address_list[MAX_ADDRESS_LIST_SIZE];
-        // ISPRAVKA 1: Obavezno nuliraj cijeli bafer prije parsiranja!
-        // Ovo osigurava da nakon upisa kraće liste, ostatak EEPROM-a bude 0.
-        memset(address_list, 0, sizeof(address_list));
         uint16_t count = 0;
         
-        // ISPRAVKA 2: Poštuj ';' kao karakter za kraj liste.
-        int end_char_pos = content.indexOf(';');
-        if (end_char_pos != -1) {
-            content = content.substring(0, end_char_pos);
-        }
-
-        content.replace("\n", ","); // Zamijeni nove redove zarezima
-
-        int start = 0;
-        int end = content.indexOf(',');
-        content += ','; // Dodaj zarez na kraj da bi petlja obradila i zadnji element
-
-        while (end != -1 && count < MAX_ADDRESS_LIST_SIZE)
+        if (!m_eeprom_storage->ParseAddressListFromCSV(content, address_list, MAX_ADDRESS_LIST_SIZE, &count))
         {
-            String addrStr = content.substring(start, end);
-            addrStr.trim();
-
-            if (addrStr.length() > 0 && addrStr.charAt(0) != '#') 
-            {
-                uint16_t addr = addrStr.toInt();
-                if (addr > 0)
-                {
-                    address_list[count++] = addr;
-                }
-            }
-            start = end + 1;
-            end = content.indexOf(',', start);
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+            return;
         }
 
         // DEBUG ISPIS: Prikaži sve adrese koje će biti upisane

@@ -71,7 +71,7 @@ private:
     };
 
     PullState m_state;
-    uint16_t m_current_address_index;
+    uint16_t m_current_address_index;  // Legacy index (single bus mode)
     uint16_t m_current_pull_address;
     
     // Dual bus support
@@ -79,6 +79,8 @@ private:
     uint16_t m_address_list_R[MAX_ADDRESS_LIST_SIZE_PER_BUS]; // Desni bus
     uint16_t m_address_list_count_L;
     uint16_t m_address_list_count_R;
+    uint16_t m_address_index_L;  // Samostalan index za Lijevi bus
+    uint16_t m_address_index_R;  // Samostalan index za Desni bus
     uint8_t m_current_bus;  // 0=Lijevi, 1=Desni (za ping-pong)
     
     // Legacy single list (za backward compatibility)

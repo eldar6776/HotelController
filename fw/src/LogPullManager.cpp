@@ -23,6 +23,8 @@ LogPullManager::LogPullManager() :
     m_address_list_count(0),
     m_address_list_count_L(0),
     m_address_list_count_R(0),
+    m_address_index_L(0),
+    m_address_index_R(0),
     m_current_bus(0),
     m_retry_count(0),
     m_hills_query_attempts(0),
@@ -259,51 +261,69 @@ void LogPullManager::Run()
 
 /**
  * @brief Vraća sljedeću adresu za polling (Replicira HC_GetNextAddr).
- * Implementira ping-pong logic za dual bus mode.
+ * Implementira sekvencijalnu logiku: prvo SVE adrese sa L liste, pa SVE sa R liste.
  */
 uint16_t LogPullManager::GetNextAddress()
 {
     if (g_appConfig.enable_dual_bus_mode)
     {
-        // PING-PONG LOGIC: Izmjenjuju se L i R bus
-        if (m_current_bus == 0) // Lijevi bus
+        // SEKVENCIJALNA LOGIKA: Prvo SVE adrese sa Lijeve, pa SVE sa Desne
+        if (m_current_bus == 0) // Lijevi bus je TRENUTNO aktivan
         {
             if (m_address_list_count_L == 0)
             {
                 // Lijeva lista prazna, prebaci na Desnu
                 m_current_bus = 1;
-                m_current_address_index = 0;
+                m_address_index_R = 0; // Resetuj index za Desnu listu
                 if (m_address_list_count_R == 0) return 0;
-                return m_address_list_R[0];
+                // Uzmi prvu adresu sa Desne liste
+                uint16_t address = m_address_list_R[m_address_index_R];
+                m_address_index_R++;
+                return address;
             }
             
-            uint16_t current_address = m_address_list_L[m_current_address_index];
-            m_current_address_index = (m_current_address_index + 1) % m_address_list_count_L;
+            // Uzmi adresu sa Lijeve liste koristeći njen index
+            uint16_t current_address = m_address_list_L[m_address_index_L];
+            m_address_index_L++;
             
-            // Nakon svake adrese sa Lijevog, prebaci na Desni
-            m_current_bus = 1;
+            // PROVJERA: Da li smo završili Lijevu listu?
+            if (m_address_index_L >= m_address_list_count_L)
+            {
+                // Završili smo Lijevu listu - prebaci na Desnu
+                m_address_index_L = 0; // Resetuj index za sledeći ciklus
+                m_current_bus = 1;     // Prebaci na Desni bus
+                m_address_index_R = 0; // Resetuj index Desne liste
+            }
+            
             return current_address;
         }
-        else // Desni bus
+        else // Desni bus je TRENUTNO aktivan (m_current_bus == 1)
         {
             if (m_address_list_count_R == 0)
             {
                 // Desna lista prazna, prebaci na Lijevu
                 m_current_bus = 0;
+                m_address_index_L = 0; // Resetuj index za Lijevu listu
                 if (m_address_list_count_L == 0) return 0;
-                return m_address_list_L[m_current_address_index];
+                // Uzmi prvu adresu sa Lijeve liste
+                uint16_t address = m_address_list_L[m_address_index_L];
+                m_address_index_L++;
+                return address;
             }
             
-            // Ako je m_current_address_index >= count_R, resetuj
-            if (m_current_address_index >= m_address_list_count_R) {
-                m_current_address_index = 0;
+            // Uzmi adresu sa Desne liste koristeći njen index
+            uint16_t current_address = m_address_list_R[m_address_index_R];
+            m_address_index_R++;
+            
+            // PROVJERA: Da li smo završili Desnu listu?
+            if (m_address_index_R >= m_address_list_count_R)
+            {
+                // Završili smo Desnu listu - prebaci na Lijevu
+                m_address_index_R = 0; // Resetuj index za sledeći ciklus
+                m_current_bus = 0;     // Prebaci na Lijevi bus
+                m_address_index_L = 0; // Resetuj index Lijeve liste
             }
             
-            uint16_t current_address = m_address_list_R[m_current_address_index];
-            m_current_address_index = (m_current_address_index + 1) % m_address_list_count_R;
-            
-            // Nakon svake adrese sa Desnog, prebaci na Lijevi
-            m_current_bus = 0;
             return current_address;
         }
     }

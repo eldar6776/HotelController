@@ -65,6 +65,9 @@ struct AppConfig
     // NEW: Mixed Protocol Support (Dual Bus)
     uint8_t protocol_version_L;              ///< Protokol za Lijevi RS485 bus (CTRL_ADD_L lista)
     uint8_t protocol_version_R;              ///< Protokol za Desni RS485 bus (CTRL_ADD_R lista)
+    
+    // NEW: WiFi Configuration
+    bool use_wifi_as_primary;                ///< true = WiFi primarni interfejs, false = Ethernet (default)
 };
 
 /**

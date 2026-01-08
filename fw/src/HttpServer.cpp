@@ -352,6 +352,10 @@ void HttpServer::HandleRoot(AsyncWebServerRequest *request)
         if(var == "SYSID") return String(g_appConfig.system_id);
         if(var == "MDNSNAME") return String(g_appConfig.mdns_name);
         if(var == "DUALBUS") return g_appConfig.enable_dual_bus_mode ? String("checked") : String("");
+        
+        // NOVO: Placeholderi za izbor mrežnog interfejsa
+        if(var == "IFACE_ETH_CHK") return g_appConfig.use_wifi_as_primary ? String("") : String("checked");
+        if(var == "IFACE_WIFI_CHK") return g_appConfig.use_wifi_as_primary ? String("checked") : String("");
 
         return String();
     });
@@ -795,6 +799,35 @@ void HttpServer::HandleSysctrlRequest(AsyncWebServerRequest *request)
         }
         else
         {
+            SendSSIResponse(request, HTTP_RESPONSE_ERROR);
+        }
+        return;
+    }
+
+    // --- NOVO: Promjena primarnog mrežnog interfejsa: set_iface ---
+    if (request->hasParam("set_iface"))
+    {
+        int iface_value = request->getParam("set_iface")->value().toInt();
+        bool new_use_wifi = (iface_value == 1); // 0 = Ethernet, 1 = WiFi
+        
+        Serial.printf("[HttpServer] Promjena primarnog interfejsa: %s -> %s\n", 
+            g_appConfig.use_wifi_as_primary ? "WiFi" : "Ethernet",
+            new_use_wifi ? "WiFi" : "Ethernet");
+        
+        g_appConfig.use_wifi_as_primary = new_use_wifi;
+        
+        if (m_eeprom_storage->WriteConfig(&g_appConfig))
+        {
+            Serial.println(F("[HttpServer] Konfiguracija snimljena. Uređaj će se restartovati..."));
+            SendSSIResponse(request, HTTP_RESPONSE_OK);
+            
+            // Zakaži restart nakon 2 sekunde (daj vremena za slanje odgovora)
+            delay(1000);
+            ESP.restart();
+        }
+        else
+        {
+            Serial.println(F("[HttpServer] GREŠKA: Snimanje konfiguracije nije uspjelo!"));
             SendSSIResponse(request, HTTP_RESPONSE_ERROR);
         }
         return;

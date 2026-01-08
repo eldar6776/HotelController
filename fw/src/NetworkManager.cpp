@@ -145,19 +145,42 @@ void NetworkManager::RunTask()
 {
     LOG_DEBUG(5, "[NetworkManager] Entering RunTask()...\n");
     
-    // Vraćamo punu logiku: prvo Ethernet, pa WiFi kao fallback
-    InitializeETH();
-
-    LOG_DEBUG(4, "[NetworkManager] Čekam na Ethernet konekciju (do 10s)...\n");
-    for (int i = 0; i < 20; i++) {
-        if (m_eth_connected) break;
-        delay(500);
-    }
-
-    if (!m_eth_connected)
+    // ========================================================================
+    // NOVA LOGIKA: Statički odabir interfejsa prema konfiguraciji
+    // ========================================================================
+    if (g_appConfig.use_wifi_as_primary)
     {
-        LOG_DEBUG(3, "[NetworkManager] Ethernet nije uspio. Pokrećem WiFi...\n");
+        LOG_DEBUG(3, "[NetworkManager] Konfiguracija: WiFi primarni interfejs. Pokrećem WiFi...\n");
         InitializeWiFi();
+        
+        // Čekaj na WiFi konekciju (do 20 sekundi)
+        LOG_DEBUG(4, "[NetworkManager] Čekam na WiFi konekciju (do 20s)...\n");
+        for (int i = 0; i < 40; i++) {
+            if (m_wifi_connected) break;
+            delay(500);
+        }
+        
+        if (!m_wifi_connected)
+        {
+            LOG_DEBUG(2, "[NetworkManager] UPOZORENJE: WiFi konekcija nije uspostavljena nakon 20s!\n");
+        }
+    }
+    else
+    {
+        LOG_DEBUG(3, "[NetworkManager] Konfiguracija: Ethernet primarni interfejs. Pokrećem Ethernet...\n");
+        InitializeETH();
+        
+        // Čekaj na Ethernet konekciju (do 10 sekundi)
+        LOG_DEBUG(4, "[NetworkManager] Čekam na Ethernet konekciju (do 10s)...\n");
+        for (int i = 0; i < 20; i++) {
+            if (m_eth_connected) break;
+            delay(500);
+        }
+        
+        if (!m_eth_connected)
+        {
+            LOG_DEBUG(2, "[NetworkManager] UPOZORENJE: Ethernet konekcija nije uspostavljena nakon 10s!\n");
+        }
     }
     
     m_initialization_complete = true;
@@ -305,6 +328,72 @@ void NetworkManager::InitializeWiFi()
         m_wifi_connected = true;
     }
     LOG_DEBUG(5, "[NetworkManager] Exiting InitializeWiFi().\n");
+}
+
+/**
+ * @brief Pokreće WiFi Config Mode (Emergency režim sa WiFiManager AP modom).
+ */
+void NetworkManager::StartWiFiConfigMode()
+{
+    LOG_DEBUG(3, "[NetworkManager] EMERGENCY MODE: Pokretanje WiFi Config Mode...\n");
+    Serial.println(F("[NetworkManager] ===================================="));
+    Serial.println(F("[NetworkManager] EMERGENCY/CONFIG MODE AKTIVIRAN"));
+    Serial.println(F("[NetworkManager] ===================================="));
+    Serial.println(F("[NetworkManager] WiFiManager AP Mode pokrenut."));
+    Serial.println(F("[NetworkManager] SSID: HotelController_Setup"));
+    Serial.println(F("[NetworkManager] Spojite se na AP i konfigurisite WiFi."));
+    Serial.println(F("[NetworkManager] ===================================="));
+    
+    // KRITIČNO: Resetuj WiFiManager postavke (briše sačuvane kredencijale)
+    // Ovo forsira AP mod čak i ako postoje prethodno sačuvani kredencijali
+    Serial.println(F("[NetworkManager] Brisanje starih WiFi kredencijala..."));
+    g_wifiManager.resetSettings();
+    
+    // Blokirajuće pokretanje WiFiManager-a u AP modu
+    // Uređaj će ostati u AP modu dok korisnik ne unese kredencijale
+    bool res = g_wifiManager.autoConnect("HotelController_Setup");
+    
+    if (res)
+    {
+        Serial.println(F("[NetworkManager] WiFi uspješno konfigurisan!"));
+        Serial.printf("[NetworkManager] Povezan na: %s\n", WiFi.SSID().c_str());
+        Serial.printf("[NetworkManager] IP Adresa: %s\n", WiFi.localIP().toString().c_str());
+        
+        // Automatski postavi use_wifi_as_primary na true
+        g_appConfig.use_wifi_as_primary = true;
+        
+        // Snimi u EEPROM
+        extern EepromStorage g_eepromStorage;
+        if (g_eepromStorage.WriteConfig(&g_appConfig))
+        {
+            LOG_DEBUG(2, "[NetworkManager] use_wifi_as_primary postavljen na true i snimljen u EEPROM.\n");
+            Serial.println(F("[NetworkManager] Konfiguracija snimljena. WiFi je sada primarni interfejs."));
+        }
+        else
+        {
+            LOG_DEBUG(1, "[NetworkManager] GREŠKA: Snimanje konfiguracije u EEPROM nije uspjelo!\n");
+        }
+        
+        m_wifi_connected = true;
+        m_initialization_complete = true;
+        
+        // Inicijalizuj NTP
+        InitializeNTP();
+        
+        // Pokreni HTTP Server
+        if (IsNetworkConnected()) {
+            LOG_DEBUG(5, "[NetworkManager] -> Pokretanje HttpServer...\n");
+            g_httpServer.Start();
+        }
+    }
+    else
+    {
+        Serial.println(F("[NetworkManager] WiFi konfiguracija nije uspjela. Restart..."));
+        delay(3000);
+        ESP.restart();
+    }
+    
+    LOG_DEBUG(5, "[NetworkManager] Exiting StartWiFiConfigMode().\n");
 }
 
 /**

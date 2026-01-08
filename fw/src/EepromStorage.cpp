@@ -172,6 +172,18 @@ void EepromStorage::MigrateConfig(uint16_t oldVersion)
     }
     
     // ========================================================================
+    // NOVO: WiFi Configuration (dodato u V4)
+    // ========================================================================
+    
+    // Postavi default za use_wifi_as_primary (default: false = Ethernet primarni)
+    // Ova provera radi jer je bool tipa, ali koristimo verziju kao indikator
+    if (oldVersion < EEPROM_CONFIG_VERSION)
+    {
+        g_appConfig.use_wifi_as_primary = false;
+        LOG_DEBUG(2, "[Eeprom] Inicijalizovan use_wifi_as_primary -> false (Ethernet primarni - default)\n");
+    }
+    
+    // ========================================================================
     // TEMPLATE ZA BUDUĆA POLJA - kopiraj i prilagodi:
     // ========================================================================
     
@@ -281,8 +293,11 @@ void EepromStorage::LoadDefaultConfig()
     // 11. NEW: Mixed Protocol Support (default: oba HILLS)
     g_appConfig.protocol_version_L = static_cast<uint8_t>(ProtocolVersion::HILLS);
     g_appConfig.protocol_version_R = static_cast<uint8_t>(ProtocolVersion::HILLS);
+    
+    // 12. NEW: WiFi Configuration (default: Ethernet primarni)
+    g_appConfig.use_wifi_as_primary = false;
 
-    // 12. Snimi nove (defaultne) vrijednosti u EEPROM
+    // 13. Snimi nove (defaultne) vrijednosti u EEPROM
     if (WriteConfig(&g_appConfig))
     {
         LOG_DEBUG(3, "[Eeprom] Podrazumijevane vrijednosti uspješno snimljene u EEPROM.\n");

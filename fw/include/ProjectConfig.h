@@ -74,6 +74,7 @@ enum class ProtocolVersion
 // STATUS_LED_PIN se ne može koristiti jer su svi preostali pinovi zauzeti ili nepouzdani.
 #define STATUS_LED_PIN      -1  // Onemogućeno
 #define WIFI_RST_BTN_PIN    35  // (P0 Pin 13: IO35 - Samo ULAZ)
+#define EMERGENCY_CFG_PIN   39  // (P0 Pin 15: IO39 - Samo ULAZ) - Emergency WiFi Config Mode pin
 #define SERIAL_DEBUG_BAUDRATE 115200
 
 // --- DWIN (UART0) - Pinovi na P1 konektoru ---
@@ -147,7 +148,7 @@ enum class ProtocolVersion
 // 5. GLOBALNE KONSTANTE SISTEMA
 //=============================================================================
 #define EEPROM_MAGIC_NUMBER         0xDEADBEEF
-#define EEPROM_CONFIG_VERSION       3  // UPDATED: Added enable_dual_bus_mode flag
+#define EEPROM_CONFIG_VERSION       4  // UPDATED: Added use_wifi_as_primary flag
 
 #define MAX_ADDRESS_LIST_SIZE       500  // Max 500 adresa po listi
 #define MAX_ADDRESS_LIST_SIZE_PER_BUS 250  // 250 adresa po bus-u u dual mode (2x250=500 total)

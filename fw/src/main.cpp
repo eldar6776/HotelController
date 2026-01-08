@@ -160,6 +160,42 @@ void setup()
     g_networkManager.Initialize();
     g_rs485Service.Initialize();
 
+    // --- FAZA 2.6: Provjera Emergency/Config Pin (Pin 39) ---
+    Serial.println(F("[setup] Provjera Emergency Config pina..."));
+    
+    // Konfigurisi Pin 39 kao INPUT (ima interni pull-up, ali eksterni je preporučen)
+    pinMode(EMERGENCY_CFG_PIN, INPUT);
+    
+    // Čitaj stanje pina
+    int emergencyPinState = digitalRead(EMERGENCY_CFG_PIN);
+    Serial.printf("[setup] Emergency Config Pin (GPIO%d) stanje: %s\n", 
+                  EMERGENCY_CFG_PIN, emergencyPinState == LOW ? "LOW (AKTIVNO)" : "HIGH (NORMALNO)");
+    
+    bool emergencyMode = (emergencyPinState == LOW);
+    
+    if (emergencyMode)
+    {
+        Serial.println(F("[setup] ==================================="));
+        Serial.println(F("[setup] EMERGENCY/CONFIG MODE DETEKTOVAN"));
+        Serial.println(F("[setup] ==================================="));
+        Serial.println(F("[setup] Preskačem normalnu inicijalizaciju."));
+        Serial.println(F("[setup] Pokrećem WiFi Config Mode..."));
+        
+        // Pokreni WiFi Config Mode (blokirajuće)
+        g_networkManager.StartWiFiConfigMode();
+        
+        // Nakon uspješne konfiguracije, WiFi je aktivan i HTTP server je pokrenut
+        // Preskačemo standardni StartTask() i ostale inicijalizacije
+        
+        Serial.println(F("[setup] ==================================="));
+        Serial.println(F("[setup] Emergency Config završen. Sistem radi na WiFi-u."));
+        Serial.println(F("[setup] ==================================="));
+    }
+    else
+    {
+        Serial.println(F("[setup] Normalan boot mod. Nastavljam sa standardnom inicijalizacijom..."));
+    }
+
     // --- FAZA 3: Inicijalizacija Sub-Modula ---
     LOG_DEBUG(3, "[setup] Inicijalizacija Sub-Modula...\r\n");
 
@@ -181,8 +217,11 @@ void setup()
     g_updateManager.SetHttpServer(&g_httpServer);
     g_fufUpdateManager.SetHttpServer(&g_httpServer);
 
-    // Pokrećemo mrežni zadatak
-    g_networkManager.StartTask();
+    // Pokrećemo mrežni zadatak (samo ako nismo u Emergency modu)
+    if (!emergencyMode)
+    {
+        g_networkManager.StartTask();
+    }
 
     Serial.println(F("==================================="));
     Serial.println(F("[setup] Inicijalizacija zavrsena. Sistem radi."));

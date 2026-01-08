@@ -39,6 +39,11 @@ public:
      * @brief Pokreće FreeRTOS zadatak za mrežnu inicijalizaciju.
      */
     void StartTask(); // NOVO: Metoda za pokretanje zadatka
+    
+    /**
+     * @brief Pokreće WiFi Config Mode (WiFiManager AP mod za Emergency konfiguraciju).
+     */
+    void StartWiFiConfigMode();
 
     /**
      * @brief Glavna petlja (legacy/unused).

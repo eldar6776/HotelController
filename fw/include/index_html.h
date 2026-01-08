@@ -229,6 +229,24 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     <!-- Mrežne Postavke -->
     <div class="file-section">
         <h3>Mrežne Postavke</h3>
+        
+        <!-- NOVO: Izbor Primarnog Interfejsa -->
+        <div style="background: #fff3cd; padding: 10px; border-radius: 5px; margin-bottom: 15px;">
+            <strong>Primarni Mrežni Interfejs:</strong><br>
+            <input type="radio" id="iface_eth" name="primary_iface" value="0" %IFACE_ETH_CHK%>
+            <label for="iface_eth">Ethernet (PoE)</label>
+            <input type="radio" id="iface_wifi" name="primary_iface" value="1" %IFACE_WIFI_CHK% style="margin-left: 20px;">
+            <label for="iface_wifi">WiFi</label>
+            <br>
+            <input value="Promijeni Interfejs i Restartuj" type="button" onclick="send_event(590)" style="margin-top: 8px; background: #ff6b6b;">
+            <br>
+            <span style="color: #856404; font-size: 0.85em;">
+                ⚠️ Promjena interfejsa zahtijeva restart uređaja!<br>
+                Za WiFi konfiguraciju: Uključite uređaj sa pritisnutim Emergency pinom (GPIO39).
+            </span>
+        </div>
+        <hr>
+        
         IP adresa............<input id="kont550" value="%IP0%" type="number" min="0" max="255"> <input id="kont551" value="%IP1%" type="number" min="0" max="255"> <input id="kont552" value="%IP2%" type="number" min="0" max="255"> <input id="kont553" value="%IP3%" type="number" min="0" max="255">
         <hr>
         Subnet Mask......<input id="kont560" value="%NM0%" type="number" min="0" max="255"> <input id="kont561" value="%NM1%" type="number" min="0" max="255"> <input id="kont562" value="%NM2%" type="number" min="0" max="255"> <input id="kont563" value="%NM3%" type="number" min="0" max="255">
@@ -819,6 +837,14 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         else if (t == "583") {
             var dual_bus_enabled = document.getElementById("kont583").checked ? "1" : "0";
             htt = "sysctrl.cgi?dual_bus=" + dual_bus_enabled;
+        }
+        else if (t == "590") { // NOVO: Promjena primarnog interfejsa
+            var iface = document.querySelector('input[name="primary_iface"]:checked').value;
+            if (confirm("UPOZORENJE: Promjena mrežnog interfejsa će restartovati uređaj!\n\nDa li ste sigurni?")) {
+                htt = "sysctrl.cgi?set_iface=" + iface;
+            } else {
+                return; // Otkaži ako korisnik nije siguran
+            }
         }
         else if (t == "600") { // Snimanje dodatnih sync paketa
             htt = "sysctrl.cgi?set_add_sync=1";

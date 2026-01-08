@@ -89,6 +89,7 @@ private:
     
     uint8_t m_retry_count;
     uint8_t m_hills_query_attempts;  // HILLS ping-pong counter
+    uint8_t m_current_bus_attempt;   // Single mode: 0=Bus 0 pokušaj, 1=Bus 1 pokušaj
     unsigned long m_last_activity_time;
 };
 

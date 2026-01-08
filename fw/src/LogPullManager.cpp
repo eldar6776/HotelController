@@ -28,6 +28,7 @@ LogPullManager::LogPullManager() :
     m_current_bus(0),
     m_retry_count(0),
     m_hills_query_attempts(0),
+    m_current_bus_attempt(0),
     m_last_activity_time(0)
 {
     // Konstruktor
@@ -216,9 +217,26 @@ void LogPullManager::Run()
             }
             else
             {
-                LOG_DEBUG(4, "[LogPull] Timeout za 0x%X. Sljedeća adresa.\n", m_current_pull_address);
-                m_state = PullState::IDLE;
-                m_hills_query_attempts = 0;
+                // Standardni timeout (ne-HILLS ili STATUS/LOG request)
+                
+                // SINGLE MODE FALLBACK: Pokušaj drugi bus ako prvi ne odgovori
+                if (!g_appConfig.enable_dual_bus_mode && m_current_bus_attempt == 0)
+                {
+                    LOG_DEBUG(4, "[LogPull] Timeout na Bus 0 za 0x%X, pokušavam Bus 1...\n", m_current_pull_address);
+                    m_rs485_service->SelectBus(1);
+                    m_current_bus_attempt = 1; // Označava da pokušavamo Bus 1
+                    // Vrati se na IDLE da bi ponovo poslali upit na Bus 1
+                    m_state = PullState::IDLE;
+                    m_retry_count = 0;
+                }
+                else
+                {
+                    // Dual mode ili smo već pokušali oba busa u single mode
+                    LOG_DEBUG(4, "[LogPull] Timeout za 0x%X. Sljedeća adresa.\n", m_current_pull_address);
+                    m_state = PullState::IDLE;
+                    m_hills_query_attempts = 0;
+                    m_current_bus_attempt = 0; // Resetuj za sljedeću adresu
+                }
             }
             m_last_activity_time = millis();
         }
@@ -244,15 +262,31 @@ void LogPullManager::Run()
             }
         }
         
-        m_current_pull_address = GetNextAddress();
-        
-        // Postavi aktivan bus prije slanja
-        if (g_appConfig.enable_dual_bus_mode)
-        {
-            int8_t bus_id = GetBusForAddress(m_current_pull_address);
-            if (bus_id >= 0) {
-                m_rs485_service->SelectBus(bus_id);
-                LOG_DEBUG(4, "[LogPull] Adresa 0x%04X -> Bus %d\n", m_current_pull_address, bus_id);
+        // SINGLE MODE: Ne uzimaj novu adresu ako pokušavamo Bus 1
+        if (!g_appConfig.enable_dual_bus_mode && m_current_bus_attempt == 1) {
+            // Nastavimo sa istom adresom, samo na drugom bus-u
+            m_rs485_service->SelectBus(1);
+            LOG_DEBUG(4, "[LogPull] Single mode retry: Adresa 0x%04X -> Bus 1\n", m_current_pull_address);
+        } else {
+            // Uzmi novu adresu
+            m_current_pull_address = GetNextAddress();
+            
+            // Postavi aktivan bus prije slanja
+            if (g_appConfig.enable_dual_bus_mode)
+            {
+                int8_t bus_id = GetBusForAddress(m_current_pull_address);
+                if (bus_id >= 0) {
+                    m_rs485_service->SelectBus(bus_id);
+                    LOG_DEBUG(4, "[LogPull] Dual mode: Adresa 0x%04X -> Bus %d\n", m_current_pull_address, bus_id);
+                }
+            }
+            else
+            {
+                // SINGLE MODE: Uvijek počni sa Bus 0
+                // Ako timeout, retry logika će pokušati Bus 1
+                m_rs485_service->SelectBus(0);
+                m_current_bus_attempt = 0; // Resetuj brojač pokušaja za oba busa
+                LOG_DEBUG(4, "[LogPull] Single mode: Adresa 0x%04X -> Pokušavam Bus 0\n", m_current_pull_address);
             }
         }
         

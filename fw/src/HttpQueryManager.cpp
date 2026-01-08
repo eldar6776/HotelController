@@ -270,12 +270,23 @@ int HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBu
     int response_len = m_rs485_service->ReceivePacket(responseBuffer, MAX_PACKET_LENGTH, HTTP_QUERY_TIMEOUT_MS);
 
     // ========================================================================
-    // FALLBACK: Ako timeout i dual mode, pokušaj drugi bus
+    // FALLBACK: Ako timeout, pokušaj drugi bus
     // ========================================================================
-    if (response_len == 0 && dual_mode && target_bus == 0)
+    // U DUAL MODE: Ako je adresa bila u listi Bus 0, pokušaj Bus 1
+    // U SINGLE MODE: Uvijek pokušaj Bus 1 ako Bus 0 ne odgovori
+    if (response_len == 0 && target_bus == 0)
     {
         LOG_DEBUG(3, "[HttpQuery] Timeout na Bus 0, pokušavam Bus 1...\n");
         m_rs485_service->SelectBus(1);
+        
+        // U SINGLE MODE: Možda trebamo prilagoditi protokol za Bus 1
+        if (!dual_mode) {
+            // NAPOMENA: U single mode protocol_version_L == protocol_version_R
+            // Tako da adaptacija nije kritična, ali je bolje biti eksplicitan
+            AdaptCommandForProtocol(cmd, 1);
+            // Ponovo kreiraj paket sa (potencijalno) drugačijom komandom
+            length = CreateRs485Packet(cmd, packet);
+        }
         
         if (m_rs485_service->SendPacket(packet, length))
         {
@@ -283,6 +294,8 @@ int HttpQueryManager::ExecuteBlockingQuery(HttpCommand* cmd, uint8_t* responseBu
             
             if (response_len > 0) {
                 LOG_DEBUG(3, "[HttpQuery] USPJEH na Bus 1!\n");
+            } else {
+                LOG_DEBUG(3, "[HttpQuery] Timeout i na Bus 1.\n");
             }
         }
     }

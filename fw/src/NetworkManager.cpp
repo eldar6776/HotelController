@@ -5,9 +5,9 @@
  * @brief   Implementacija NetworkManager modula.
  ******************************************************************************
  */
+// Uključujemo sve servise koje ćemo pokretati
 #include "DebugConfig.h"
 #include "NetworkManager.h"
-// Uključujemo sve servise koje ćemo pokretati
 #include "HttpServer.h"
 #include "Rs485Service.h"
 #include "HttpQueryManager.h"
